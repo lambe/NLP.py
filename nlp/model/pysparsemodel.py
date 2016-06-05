@@ -56,11 +56,10 @@ try:
         def A(self, *args, **kwargs):
             """Evaluate sparse Jacobian of the linear part of the constraints.
 
-            Useful to obtain constraint matrix when problem is a linear programming
-            problem.
+            Useful to obtain constraint matrix when problem is a linear
+            programming problem.
             """
-            vals, rows, cols = super(PySparseNLPModel,
-                                    self).A(*args, **kwargs)
+            vals, rows, cols = super(PySparseNLPModel, self).A(*args, **kwargs)
             A = psp(nrow=self.ncon, ncol=self.nvar,
                     sizeHint=vals.size, symmetric=False)
             A.put(vals, rows, cols)
@@ -72,6 +71,7 @@ try:
 
 except:
     pass
+
 
 class PySparseSlackModel(SlackModel):
     """SlackModel in wich matrices are PySparse matrices.
