@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""A slack framework for NLP.py."""
-
+"""A framework to add slack variables to any NLPModel."""
 
 import numpy as np
 from nlp.model.nlpmodel import NLPModel
+from pysparse.sparse import PysparseMatrix as psp
+from pykrylov.linop.linop import LinearOperator
 
 __docformat__ = 'restructuredtext'
 
@@ -214,18 +215,7 @@ class SlackModel(NLPModel):
         p[self.sR] = -v[rangeC]
         return p
 
-    def _jac(self, x, lp=False):
-        """Helper method to assemble the Jacobian matrix of the constraints.
-
-        See the documentation of :meth:`jac` for more information.
-
-        The positional argument `lp` should be set to `True` only if the
-        problem is known to be a linear program. In this case, the evaluation
-        of the constraint matrix is cheaper and the argument `x` is ignored.
-        """
-        raise NotImplementedError("Please subclass")
-
-    def jac(self, x):
+    def jac(self, x, **kwargs):
         """Evaluate constraints Jacobian at x.
 
         The gradients of the general constraints appear in 'natural' order,
@@ -237,16 +227,46 @@ class SlackModel(NLPModel):
 
         where the columns correspond to the variables `x` and `s`, and
         the rows correspond to the general constraints (in natural order).
-
         """
-        return self._jac(x, lp=False)
+        n = self.n
+        m = self.m
+        model = self.model
+        on = self.original_n
 
-    def A(self):
-        """Return the constraint matrix if the problem is a linear program.
+        lowerC = model.lowerC
+        upperC = model.upperC
+        rangeC = model.rangeC
 
-        See the documentation of :meth:`jac` for more information.
-        """
-        return self._jac(0, lp=True)
+        J = model.jac(x, **kwargs)
+
+        if isinstance(J, np.ndarray):
+            # Create a numpy array, populate the two main blocks, and return
+            new_J = np.zeros([m,n])
+
+            new_J[:, :on] = J
+            new_J[lowerC, self.sL] = -1.
+            new_J[upperC, self.sU] = -1.
+            new_J[rangeC, self.sR] = -1.
+
+        elif isinstance(J, psp):
+            # Create a new Pysparse matrix and populate
+            nnzJ = self.model.nnzj + m
+            new_J = psp(nrow=m, ncol=n, sizeHint=nnzJ)
+
+            new_J[:, :on] = J
+            new_J[lowerC, self.sL] = -1. # Test these calls on interface
+            new_J[upperC, self.sU] = -1.
+            new_J[rangeC, self.sR] = -1.
+
+        elif isinstance(J, LinearOperator):
+            # Create a new linear operator calling the SlackModel jprod() and
+            # jtprod() methods
+            new_J = self.jop(x)
+
+        else:
+            raise TypeError('Jacobian return type not recognized.')
+
+        return new_J
 
     def hprod(self, x, y, v, **kwargs):
         """Hessian-vector product.
@@ -265,21 +285,30 @@ class SlackModel(NLPModel):
         Hv[:on] = model.hprod(x[:on], y, v[:on], **kwargs)
         return Hv
 
-    def hess(self, x, z=None, *args, **kwargs):
+    def hess(self, x, z=None, **kwargs):
         """Evaluate Lagrangian Hessian at (x, z)."""
-        raise NotImplementedError("Please subclass")
-
-    def ghivprod(self, x, g, v, **kwargs):
-        """Evaluate individual dot products (g, Hi(x)*v).
-
-        Evaluate the vector of dot products (g, Hi(x)*v) where Hi(x) is the
-        Hessian of the i-th constraint at point x, i=1..m.
-        """
-        # Some shortcuts for convenience
+        n = self.n
         model = self.model
         on = self.original_n
-        om = self.original_m
 
-        gHiv = np.zeros(self.m)
-        gHiv[:om] = model.ghivprod(x[:on], g[:on], v[:on], **kwargs)
-        return gHiv
+        H = model.hess(x,z,**kwargs)
+
+        if isinstance(H, np.ndarray):
+            # Create a larger numpy array, with slack terms zero
+            new_H = np.zeros([n,n])
+            new_H[:on, :on] = H
+
+        elif isinstance(H, psp):
+            # Create a new pysparse matrix and populate
+            new_H = psp(nrow=self.n, ncol=self.n, symmetric=True,
+                sizeHint=model.nnzh)
+            new_H[:on, :on] = H
+
+        elif isinstance(H, LinearOperator):
+            # Create a new linear operator calling the SlackModel hprod()
+            new_H = self.hop(x, z=z)
+
+        else:
+            raise TypeError('Hessian return type not recognized.')
+
+        return new_H

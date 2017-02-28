@@ -8,9 +8,8 @@ import numpy as np
 from nlp.model.kkt import KKTresidual
 from nlp.tools.decorators import deprecated, counter
 from nlp.tools.utils import where
-from pykrylov.linop.linop import LinearOperator, DiagonalOperator, \
-    ReducedLinearOperator
-from pykrylov.linop.blkop import BlockLinearOperator
+from pykrylov.linop.linop import LinearOperator
+from pysparse.sparse import PysparseMatrix as psp
 
 
 class NLPModel(object):
@@ -552,61 +551,23 @@ class NLPModel(object):
         """Evaluate vector of constraints at x."""
         raise NotImplementedError('This method must be subclassed.')
 
-    def cons_pos(self, x):
-        """Convenience function to return constraints as non negative ones.
-
-        Constraints are reformulated as
-
-          ci(x) - ai  = 0  for i in equalC
-          ci(x) - Li >= 0  for i in lowerC + rangeC
-          Ui - ci(x) >= 0  for i in upperC + rangeC.
-
-        The constraints appear in natural order, except for the fact that the
-        'upper side' of range constraints is appended to the list.
-
-        Scaling should be applied in cons().
-        """
-        m = self.m
-        equalC = self.equalC
-        lowerC = self.lowerC
-        upperC = self.upperC
-        rangeC = self.rangeC
-        nrangeC = self.nrangeC
-
-        # Set the type of c to the type of x to allow for object arrays.
-        # This is useful to AD packages.
-        c = np.empty(m + nrangeC, dtype=x.dtype)
-        c[:m] = self.cons(x)
-        c[m:] = c[rangeC]
-
-        c[equalC] -= self.Lcon[equalC]
-        c[lowerC] -= self.Lcon[lowerC]
-        c[upperC] -= self.Ucon[upperC]
-        c[upperC] *= -1
-        c[rangeC] -= self.Lcon[rangeC]
-        c[m:] -= self.Ucon[rangeC]
-        c[m:] *= -1
-
-        return c
-
+    @deprecated
     def icons(self, i, x, **kwargs):
         """Evaluate i-th constraint at x."""
         raise NotImplementedError('This method must be subclassed.')
 
+    @deprecated
     def igrad(self, i, x, **kwargs):
         """Evalutate i-th dense constraint gradient at x."""
         raise NotImplementedError('This method must be subclassed.')
 
+    @deprecated
     def sigrad(self, i, x, **kwargs):
         """Evaluate i-th sparse constraint gradient at x."""
         raise NotImplementedError('This method must be subclassed.')
 
     def jac(self, x, **kwargs):
         """Evaluate constraints Jacobian at x."""
-        raise NotImplementedError('This method must be subclassed.')
-
-    def jac_pos(self, x, **kwargs):
-        """Evaluate the Jacobian of :meth:`cons_pos` at x."""
         raise NotImplementedError('This method must be subclassed.')
 
     def jprod(self, x, p, **kwargs):
@@ -624,17 +585,6 @@ class NLPModel(object):
                               matvec_transp=lambda u: self.jtprod(x, u),
                               symmetric=False,
                               dtype=np.float)
-
-    def jop_pos(self, x):
-        """Jacobian of :meth:`cons_pos` at x as a linear operator."""
-        J = self.jop(x)
-        e = np.ones(self.ncon + self.nrangeC)
-        e[self.upperC] = -1
-        e[self.ncon:] = -1
-        JR = ReducedLinearOperator(J, self.rangeC, range(self.nvar))
-        Jpos = BlockLinearOperator([[J], [JR]], dtype=np.float)
-        D = DiagonalOperator(e)
-        return D * Jpos  # Flip sign of 'upper' constraints.
 
     def lag(self, x, z, **kwargs):
         """Evaluate Lagrangian at (x, z).
@@ -666,6 +616,7 @@ class NLPModel(object):
         """
         raise NotImplementedError('This method must be subclassed.')
 
+    @deprecated
     def hiprod(self, i, x, p, **kwargs):
         """Constraint Hessian-vector product.
 
@@ -674,6 +625,7 @@ class NLPModel(object):
         """
         raise NotImplementedError('This method must be subclassed.')
 
+    @deprecated
     def ghivprod(self, x, g, v, **kwargs):
         """Evaluate individual dot products (g, Hi*v).
 
@@ -733,142 +685,106 @@ class NLPModel(object):
         return '%s %s with %d variables and %d constraints' % dat
 
 
-class QPModel(NLPModel):
-    u"""Generic class to represent a quadratic programming (QP) problem.
+class DenseNLPModel(NLPModel):
+    """A specialization of NLPModel where jac() and hess() always return
+    (dense) 2-D Numpy arrays.
 
-    minimize    cᵀx + 1/2 xᵀHx
-    subject to  L ≤ A x ≤ U
-                l ≤ x ≤ u.
+    The matrix-vector product methods jprod(), jtprod(), and hprod() are
+    specialized to perform multiplications with the current Jacobian and
+    Hessian using np.dot(). The user does not need to define them.
     """
 
-    def __init__(self, c, H, A=None, name='GenericQP', **kwargs):
-        """Initialize a QP with linear term `c`, Hessian `H` and Jacobian `A`.
-
-        :parameters:
-            :c:   Numpy array to represent the linear objective
-            :A:   linear operator to represent the constraint matrix.
-                  It must be possible to perform the operations `A*x`
-                  and `A.T*y` for Numpy arrays `x` and `y` of appropriate size.
-                  If `A` is `None`, it will be replaced with an empty linear
-                  operator.
-            :H:   linear operator to represent the objective Hessian.
-                  It must be possible to perform the operation `H*x`
-                  for a Numpy array `x` of appropriate size. The operator `H`
-                  should be symmetric.
-
-        See the documentation of `NLPModel` for futher information.
-        """
-        # Basic checks.
-        n = c.shape[0]
-        if A is None:
-            m = 0
-            self.A = LinearOperator(n, 0,
-                                    lambda x: np.empty((0, 1)),
-                                    matvec_transp=lambda y: np.empty((n, 0)),
-                                    dtype=np.float)
-        else:
-            if A.shape[1] != n or H.shape[0] != n or H.shape[1] != n:
-                raise ValueError('Shapes are inconsistent')
-            m = A.shape[0]
-            self.A = A
-
-        super(QPModel, self).__init__(n=n, m=m, name=name, **kwargs)
-        self.c = c
-        self.H = H
-
-        # Default classification of constraints
-        self._lin = range(self.m)             # Linear    constraints
-        self._nln = []                        # Nonlinear constraints
-        self._net = []                        # Network   constraints
-        self._nlin = len(self.lin)            # Number of linear constraints
-        self._nnln = len(self.nln)            # Number of nonlinear constraints
-        self._nnet = len(self.net)            # Number of network constraints
-
-    def obj(self, x):
-        """Evaluate the objective function at x."""
-        cHx = self.hprod(x, 0, x)
-        cHx *= 0.5
-        cHx += self.c
-        return np.dot(cHx, x)
-
-    def grad(self, x):
-        """Evaluate the objective gradient at x."""
-        Hx = self.hprod(x, 0, x)
-        Hx += self.c
-        return Hx
-
-    def cons(self, x):
-        """Evaluate the constraints at x."""
-        if isinstance(self.A, np.ndarray):
-            return np.dot(self.A, x)
-        return self.A * x
-
-    def A(self, x):
-        """Evaluate the constraints Jacobian at x."""
-        return self.A
-
-    def jac(self, x):
-        """Evaluate the constraints Jacobian at x."""
-        return self.A
-
-    def jprod(self, x, p):
+    def jprod(self, x, p, **kwargs):
         """Evaluate Jacobian-vector product at x with p."""
-        return self.cons(p)
+        return np.dot(self.jac(x, **kwargs), p)
 
-    def jtprod(self, x, p):
+    def jtprod(self, x, p, **kwargs):
         """Evaluate transposed-Jacobian-vector product at x with p."""
-        if isinstance(self.A, np.ndarray):
-            return np.dot(self.A.T, p)
-        return self.A.T * p
+        return np.dot(p, self.jac(x, **kwargs))
 
-    def hess(self, x, z):
-        """Evaluate Lagrangian Hessian at (x, z)."""
-        return self.H
-
-    def hprod(self, x, z, p):
+    def hprod(self, x, z, p, **kwargs):
         """Hessian-vector product.
 
         Evaluate matrix-vector product between the Hessian of the Lagrangian at
         (x, z) and p.
         """
-        if isinstance(self.H, np.ndarray):
-            return np.dot(self.H, p)
-        return self.H * p
+        return np.dot(self.hess(x, z=z, **kwargs), p)
 
 
-class LPModel(QPModel):
-    u"""Generic class to represent a linear programming (LP) problem.
+class SparseNLPModel(NLPModel):
+    """A specialization of NLPModel where jac() and hess() always return
+    sparse matrices of the Pysparse type.
 
-    minimize    cᵀx
-    subject to  L ≤ A x ≤ U
-                l ≤ x ≤ u.
+    Note: to use this class, the user must define the jac_triple and
+    hess_triple methods to return a triple of Numpy vectors in the order
+    (vals, rows, cols). The object's own jac() and hess() methods then
+    construct the sparse matrix.
+
+    The matrix-vector product methods jprod(), jtprod(), and hprod() are
+    specialized to perform multiplications using the * operator. The user
+    does not need to define them.
     """
 
-    def __init__(self, c, A=None, name='GenericLP', **kwargs):
-        """Initialize a LP with linear term `c` and Jacobian `A`.
+    def jac_triple(self, x, **kwargs):
+        """Evaluate the Jacobian in coordinate (COO) format."""
+        raise NotImplementedError('This method must be subclassed.')
 
-        :parameters:
-            :c:   Numpy array to represent the linear objective
-            :A:   linear operator to represent the constraint matrix.
-                  It must be possible to perform the operations `A*x`
-                  and `A.T*y` for Numpy arrays `x` and `y` of appropriate size.
+    def jac(self, x, **kwargs):
+        """Evaluate constraints Jacobian at x.
 
-        See the documentation of `NLPModel` for futher information.
+        The matrix is constructed from a Numpy vector triple defined by
+        the jac_triple() method."""
+        vals, rows, cols = self.jac_triple(*args, **kwargs)
+        J = psp(nrow=self.ncon, ncol=self.nvar,
+                sizeHint=vals.size, symmetric=False)
+        if vals.size > 0:
+            J.put(vals, rows, cols)
+        return J
+
+    def jprod(self, x, p, **kwargs):
+        """Evaluate Jacobian-vector product at x with p."""
+        return self.jac(x, **kwargs) * p
+
+    def jtprod(self, x, p, **kwargs):
+        """Evaluate transposed-Jacobian-vector product at x with p."""
+        return p * self.jac(x, **kwargs)
+
+    def hess_triple(self, x, z, **kwargs):
+        """Evaluate the Lagrangian Hessian in coordinate (COO) format."""
+        raise NotImplementedError('This method must be subclassed.')
+
+    def hess(self, x, z=None, **kwargs):
+        """Evaluate Lagrangian Hessian at (x, z)."""
+        vals, rows, cols = self.hess_triple(*args, **kwargs)
+        H = psp(size=self.nvar, sizeHint=vals.size, symmetric=True)
+        H.put(vals, rows, cols)
+        return H
+
+    def hprod(self, x, z, p, **kwargs):
+        """Hessian-vector product.
+
+        Evaluate matrix-vector product between the Hessian of the Lagrangian at
+        (x, z) and p.
         """
-        n = c.shape[0]
-        H = LinearOperator(n, n,
-                           lambda x: np.zeros(n),
-                           symmetric=True,
-                           dtype=np.float)
-        super(LPModel, self).__init__(c, H, A, name=name, **kwargs)
+        return self.hess(x, z=z, **kwargs) * p
 
-    def obj(self, x):
-        """Evaluate the objective function at x."""
-        return np.dot(self.c, x)
 
-    def grad(self, x):
-        """Evaluate the objective gradient at x."""
-        return self.c
+class MatrixFreeNLPModel(NLPModel):
+    """A specialization of NLPModel for matrix-free problems.
+
+    Unlike SparseNLPModel and DenseNLPModel, the user must provide jprod(),
+    jtprod(), and hprod() directly. Since the Jacobian and Hessian are only
+    accessed as linear operators, the jac() and hess() methods just return
+    the linear operators from jop() and hop()
+    """
+
+    def jac(self, x, **kwargs):
+        """Evaluate constraints Jacobian at x."""
+        return self.jop(x)
+
+    def hess(self, x, z=None, **kwargs):
+        """Evaluate the Lagrangian Hessian at (x,z)."""
+        return self.hop(x, z=z)
 
 
 class BoundConstrainedNLPModel(NLPModel):
