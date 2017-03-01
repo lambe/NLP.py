@@ -432,7 +432,7 @@ class RegQPInteriorPointSolver(object):
             if self.mehrotra_pc:
                 # Compute affine-scaling step, i.e. with centering = 0.
                 self.set_system_rhs(sigma=0.0)
-                self.solve_system(self.rhs)
+                self.solve_system()
                 dx_aff, dy_aff, dzL_aff, dzU_aff = self.extract_xyz(sigma=0.0)
 
                 # Compute largest allowed primal and dual stepsizes.
@@ -459,7 +459,7 @@ class RegQPInteriorPointSolver(object):
 
             # Solve augmented system.
             self.set_system_rhs(sigma=sigma)
-            self.solve_system(self.rhs)
+            self.solve_system()
             dx, dy, dzL, dzU = self.extract_xyz(sigma=sigma)
 
             # Update regularization parameters before calculating the 
@@ -694,14 +694,14 @@ class RegQPInteriorPointSolver(object):
         self.set_system_rhs()
 
         # Solve system and collect solution
-        self.solve_system(self.rhs)
+        self.solve_system()
         x, _, _, _ = self.extract_xyz()
 
         # Assemble second right-hand side
         self.set_system_rhs(dual=True)
 
         # Solve system and collect solution
-        self.solve_system(self.rhs)
+        self.solve_system()
         _, y, zL_guess, zU_guess = self.extract_xyz()
 
         # Use Mehrotra's heuristic to compute a strictly feasible starting
@@ -932,8 +932,8 @@ class RegQPInteriorPointSolver(object):
 
         return
 
-    def solve_system(self, rhs):
-        """Solve the augmented system with right-hand side `rhs`.
+    def solve_system(self):
+        """Solve the augmented system with current right-hand side.
 
         The solution may be iteratively refined based on solver options
         self.itref_threshold and self.nitref.
@@ -941,8 +941,8 @@ class RegQPInteriorPointSolver(object):
         The self.LBL object contains all of the solution data.
         """
         self.log.debug('Solving linear system')
-        self.LBL.solve(rhs)
-        self.LBL.refine(rhs, tol=self.itref_threshold, nitref=self.nitref)
+        self.LBL.solve(self.rhs)
+        self.LBL.refine(self.rhs, tol=self.itref_threshold, nitref=self.nitref)
 
         # Estimate matrix l2-norm condition number.
         if self.estimate_cond:
@@ -1144,7 +1144,6 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         n = self.n
         m = self.m
         self.K.put(new_diag, range(n))
-        self.K.put(-self.dual_reg_min**0.5, range(n,n+m))
         self.K.put(-self.dual_reg, range(n,n+m))
         return
 
