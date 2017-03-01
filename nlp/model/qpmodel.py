@@ -88,6 +88,11 @@ class QPModel(NLPModel):
             kwargs['Lcon'] = model.Lcon
             kwargs['Ucon'] = model.Ucon
 
+            # Other important arguments to pass through
+            name = model.name
+            kwargs['nnzj'] = model.nnzj
+            kwargs['nnzh'] = model.nnzh
+
         else:
             raise ValueError('QP could not be created.')
 

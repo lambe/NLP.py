@@ -734,7 +734,7 @@ class SparseNLPModel(NLPModel):
 
         The matrix is constructed from a Numpy vector triple defined by
         the jac_triple() method."""
-        vals, rows, cols = self.jac_triple(*args, **kwargs)
+        vals, rows, cols = self.jac_triple(x, **kwargs)
         J = psp(nrow=self.ncon, ncol=self.nvar,
                 sizeHint=vals.size, symmetric=False)
         if vals.size > 0:
@@ -755,7 +755,7 @@ class SparseNLPModel(NLPModel):
 
     def hess(self, x, z=None, **kwargs):
         """Evaluate Lagrangian Hessian at (x, z)."""
-        vals, rows, cols = self.hess_triple(*args, **kwargs)
+        vals, rows, cols = self.hess_triple(x, z, **kwargs)
         H = psp(size=self.nvar, sizeHint=vals.size, symmetric=True)
         H.put(vals, rows, cols)
         return H
