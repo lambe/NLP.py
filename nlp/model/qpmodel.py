@@ -76,7 +76,7 @@ class QPModel(NLPModel):
 
             # Evaluate model functions to construct the QP at x
             c = model.grad(x)
-            H = model.hess(x)
+            H = model.hess(x, np.zeros(model.m, dtype=np.float))
             A = model.jac(x)
 
             n = c.shape[0]

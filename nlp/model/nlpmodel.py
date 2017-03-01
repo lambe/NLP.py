@@ -87,7 +87,7 @@ class NLPModel(object):
         # The number of nonzeros in the Jacobian and Lagrangian Hessian
         # Only used in derived classes with sparse matrix storage
         self.nnzj = kwargs.get('nnzj',None)
-        self.nnzh = kwargs.get('nnjh',None)
+        self.nnzh = kwargs.get('nnzh',None)
 
         # Default classification of constraints
         self._lin = []                        # Linear    constraints
