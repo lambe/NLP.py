@@ -13,8 +13,10 @@ try:                            # To solve augmented systems
 except ImportError:
     from hsl.solvers.pyma27 import PyMa27Solver as LBLContext
 from hsl.scaling.mc29 import mc29ad
-from nlp.model.pysparsemodel import PySparseSlackModel
+from nlp.model.qpmodel import QPModel
+from nlp.model.snlp import SlackModel
 from pysparse.sparse import PysparseMatrix
+from pykrylov.linop.linop import PysparseLinearOperator
 from nlp.tools.norms import norm2, norm_infty, normest
 from nlp.tools.timing import cputime
 import logging
@@ -26,8 +28,8 @@ class RegQPInteriorPointSolver(object):
 
     Solve a convex quadratic program of the form::
 
-       minimize    q + cᵀx + ½ xᵀ Q x
-       subject to  Ax = b                                  (QP)
+       minimize    cᵀx + ½ xᵀ H x
+       subject to  Ax - b = 0                                  (QP)
                    l ≤ x ≤ u
 
     where Q is a symmetric positive semi-definite matrix. Any
@@ -42,7 +44,7 @@ class RegQPInteriorPointSolver(object):
     Primal and dual regularization parameters may be specified by the user
     via the opional keyword arguments `primal_reg` and `dual_reg`. Both should be
     positive real numbers and should not be "too large". By default they
-    are set to 1.0 and updated at each iteration.
+    are initialized to 1.0 and updated at each iteration.
 
     Problem scaling options are provided through the `scale_type` key word.
 
@@ -60,7 +62,9 @@ class RegQPInteriorPointSolver(object):
         """Instantiate a primal-dual-regularized IP solver for ``qp``.
 
         :parameters:
-            :qp:       a :class:`QPModel` instance.
+            :qp:       a :class:`QPModel` instance or a :class:`SlackModel`
+                       containing a :class:`QPModel`. Note that
+                       :class:`LPModel`s are also acceptable
 
         :keywords:
             :scale_type: Perform row and column scaling of the constraint
@@ -94,10 +98,14 @@ class RegQPInteriorPointSolver(object):
 
             :stoptol: The convergence tolerance (default: 1.0e-6)
         """
-        if not isinstance(qp, PySparseSlackModel):
-            msg = 'The QP model must be an instance of SlackModel with sparse'
-            msg2 = ' Hessian and Jacobian matrices available.'
-            raise TypeError(msg+msg2)
+        msg = 'Problem is not a QP.'
+        if isinstance(qp, QPModel):
+            qp = SlackModel(qp)
+        elif isinstance(qp, SlackModel):
+            if not isinstance(qp.model, QPModel):
+                raise TypeError(msg)
+        else:
+            raise TypeError(msg)
 
         # Grab logger if one was configured.
         logger_name = kwargs.get('logger_name', 'nlp.cqp')
@@ -138,21 +146,23 @@ class RegQPInteriorPointSolver(object):
             self.range_in_ub.append(self.all_ub.index(k))
 
         # Collect basic info about the problem.
-        zero_pt = np.zeros(qp.n)
-        self.q = qp.obj(zero_pt)    # Constant term in the objective
-        self.b = -qp.cons(zero_pt)  # Constant term in the constraints
-        self.c = qp.grad(zero_pt)   # Vector term in the objective
-        self.A = qp.jac(zero_pt)    # Jacobian including slack blocks
-        self.Q = qp.hess(zero_pt)   # Hessian including slack blocks
+        zero_pt = np.zeros(self.n)
+        self.b = -qp.cons(zero_pt)
+        self.c = qp.grad(zero_pt)
+        self.A = qp.jac(zero_pt)
+        self.H = qp.hess(zero_pt)
+
+        if not isinstance(self.A, PysparseMatrix):
+            raise TypeError('Matrices H and A must be Pysparse matrices.')
 
         # A few useful norms to measure algorithm convergence
         self.normb = norm2(self.b)
         self.normc = norm2(self.c)
         self.normA = self.A.matrix.norm('fro')
-        self.normQ = self.Q.matrix.norm('fro')
+        self.normH = self.H.matrix.norm('fro')
 
-        # It will be more efficient to keep the diagonal of Q around.
-        self.diagQ = self.Q.take(range(self.n))
+        # It will be more efficient to keep the diagonal of H around.
+        self.diagH = self.H.take(range(self.n))
 
         # We perform the analyze phase on the augmented system only once.
         # self.LBL will be initialized in solve().
@@ -219,14 +229,14 @@ class RegQPInteriorPointSolver(object):
 
         In effect the original problem::
 
-            minimize    c' x + 1/2 x' Q x
-            subject to  Ax = b
+            minimize    c' x + 1/2 x' H x
+            subject to  Ax - b = 0
                         (bounds)
 
         is converted to::
 
-            minimize    (Cc)' x + 1/2 x' (CQC') x
-            subject to  R A C x = R b
+            minimize    (Cc)' x + 1/2 x' (CHC') x
+            subject to  R A C x - R b = 0
                         (bounds)
 
         where the diagonal matrices R and C contain row and column scaling
@@ -305,16 +315,16 @@ class RegQPInteriorPointSolver(object):
             self.row_scale = None
             self.col_scale = None
 
-        # Apply the scaling factors to A, b, Q, and c, if available
+        # Apply the scaling factors to A, b, H, and c, if available
         if self.row_scale is not None and self.col_scale is not None:
             values *= self.row_scale[irow]
             values *= self.col_scale[jcol]
             self.A.put(values, irow, jcol)
 
-            (values, irow, jcol) = self.Q.find()
+            (values, irow, jcol) = self.H.find()
             values *= self.col_scale[irow]
             values *= self.col_scale[jcol]
-            self.Q.put(values, irow, jcol)
+            self.H.put(values, irow, jcol)
 
             self.b *= self.row_scale
             self.c *= self.col_scale
@@ -323,8 +333,8 @@ class RegQPInteriorPointSolver(object):
             self.normb = norm2(self.b)
             self.normc = norm2(self.c)
             self.normA = self.A.matrix.norm('fro')
-            self.normQ = self.Q.matrix.norm('fro')
-            self.diagQ = self.Q.take(range(self.n))
+            self.normH = self.H.matrix.norm('fro')
+            self.diagH = self.H.take(range(self.n))
 
         return
 
@@ -400,7 +410,7 @@ class RegQPInteriorPointSolver(object):
             # Compute augmented matrix and factorize it, checking for
             # degeneracy along the way
             self.set_system_matrix()
-            self.LBL.factorize(self.H)
+            self.LBL.factorize(self.K)
 
             if not self.LBL.isFullRank:
                 nbump = 0
@@ -411,7 +421,7 @@ class RegQPInteriorPointSolver(object):
                     self.primal_reg *= 100
                     self.dual_reg *= 100
                     self.update_system_matrix()
-                    self.LBL.factorize(self.H)
+                    self.LBL.factorize(self.K)
 
             # Exit immediately if regularization is unsuccessful.
             if not self.LBL.isFullRank:
@@ -606,6 +616,7 @@ class RegQPInteriorPointSolver(object):
             status = 'degn'
 
         self.log.info(long_status)
+        self.unscale()
 
         # Transfer final values to class members.
         self.iter = iter
@@ -622,14 +633,14 @@ class RegQPInteriorPointSolver(object):
         Initial values of x are computed as the solution to the
         least-squares problem::
 
-            minimize    ½ xᵀQx + ½||rᴸ||² + ½||rᵁ||²
+            minimize    ½ xᵀHx + ½||rᴸ||² + ½||rᵁ||²
             subject to  Ax = b
                         rᴸ = x - l
                         rᵁ = u - x
 
         The solution is also the solution to the augmented system::
 
-            [ Q   Aᵀ   I   I] [x ]   [0 ]
+            [ H   Aᵀ   I   I] [x ]   [0 ]
             [ A   0    0   0] [y']   [b ]
             [ I   0   -I   0] [rᴸ] = [l ]
             [ I   0    0  -I] [rᵁ]   [u ].
@@ -637,20 +648,20 @@ class RegQPInteriorPointSolver(object):
         Initial values for the multipliers y and z are chosen as the
         solution to the least-squares problem::
 
-            minimize    ½ x'ᵀQx' + ½||zᴸ||² + ½||zᵁ||²
-            subject to  Qx' + c - Aᵀy - zᴸ + zᵁ = 0
+            minimize    ½ x'ᵀHx' + ½||zᴸ||² + ½||zᵁ||²
+            subject to  Hx' + c - Aᵀy - zᴸ + zᵁ = 0
                         zᴸ = -(x - l)
                         zᵁ = -(u - x)
 
         which can be computed as the solution to the augmented system::
 
-            [ Q   Aᵀ   I   I] [x']   [-c]
+            [ H   Aᵀ   I   I] [x']   [-c]
             [ A   0    0   0] [y ]   [ 0]
             [ I   0   -I   0] [zᴸ] = [ l]
             [ I   0    0  -I] [zᵁ]   [ u].
 
         To ensure stability and nonsingularity when A does not have full row
-        rank or Q is singluar, the (1,1) block is perturbed by
+        rank or H is singluar, the (1,1) block is perturbed by
         sqrt(self.primal_reg_min) * I and the (2,2) block is perturbed by
         sqrt(self.dual_reg_min) * I.
 
@@ -676,7 +687,7 @@ class RegQPInteriorPointSolver(object):
         self.set_system_matrix()
 
         # Analyze and factorize the matrix
-        self.LBL = LBLContext(self.H,
+        self.LBL = LBLContext(self.K,
             sqd=(self.primal_reg_min > 0.0 and self.dual_reg_min > 0.0))
 
         # Assemble first right-hand side
@@ -832,16 +843,16 @@ class RegQPInteriorPointSolver(object):
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
-        The A and Q blocks of the matrix are also put in place since they
+        The A and H blocks of the matrix are also put in place since they
         are common to all problems.
         """
         self.sys_size = self.n + self.m + self.nl + self.nu
 
-        self.H = PysparseMatrix(size=self.sys_size,
-            sizeHint=self.nl + self.nu + self.A.nnz + self.Q.nnz + self.sys_size,
+        self.K = PysparseMatrix(size=self.sys_size,
+            sizeHint=self.nl + self.nu + self.A.nnz + self.H.nnz + self.sys_size,
             symmetric=True)
-        self.H[:self.n, :self.n] = self.Q
-        self.H[self.n:self.n+self.m, :self.n] = self.A
+        self.K[:self.n, :self.n] = self.H
+        self.K[self.n:self.n+self.m, :self.n] = self.A
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -856,12 +867,12 @@ class RegQPInteriorPointSolver(object):
         if self.initial_guess:
             self.log.debug('Setting up matrix for initial guess')
 
-            self.H.put(self.diagQ + self.primal_reg_min**0.5, range(n))
-            self.H.put(-self.dual_reg_min**0.5, range(n,n+m))
+            self.K.put(self.diagH + self.primal_reg_min**0.5, range(n))
+            self.K.put(-self.dual_reg_min**0.5, range(n,n+m))
 
-            self.H.put(-1.0, range(n+m, n+m+nl+nu))
-            self.H.put(1.0, range(n+m, n+m+nl), self.all_lb)
-            self.H.put(1.0, range(n+m+nl, n+m+nl+nu), self.all_ub)
+            self.K.put(-1.0, range(n+m, n+m+nl+nu))
+            self.K.put(1.0, range(n+m, n+m+nl), self.all_lb)
+            self.K.put(1.0, range(n+m+nl, n+m+nl+nu), self.all_ub)
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -871,13 +882,13 @@ class RegQPInteriorPointSolver(object):
             zL = self.zL
             zU = self.zU
 
-            self.H.put(self.diagQ + self.primal_reg, range(n))
-            self.H.put(-self.dual_reg, range(n,n+m))
+            self.K.put(self.diagH + self.primal_reg, range(n))
+            self.K.put(-self.dual_reg, range(n,n+m))
 
-            self.H.put(Lvar[self.all_lb] - x[self.all_lb], range(n+m, n+m+nl))
-            self.H.put(x[self.all_ub] - Uvar[self.all_ub], range(n+m+nl, n+m+nl+nu))
-            self.H.put(zL**0.5, range(n+m, n+m+nl), self.all_lb)
-            self.H.put(zU**0.5, range(n+m+nl, n+m+nl+nu), self.all_ub)
+            self.K.put(Lvar[self.all_lb] - x[self.all_lb], range(n+m, n+m+nl))
+            self.K.put(x[self.all_ub] - Uvar[self.all_ub], range(n+m+nl, n+m+nl+nu))
+            self.K.put(zL**0.5, range(n+m, n+m+nl), self.all_lb)
+            self.K.put(zU**0.5, range(n+m+nl, n+m+nl+nu), self.all_ub)
 
         return
 
@@ -888,8 +899,8 @@ class RegQPInteriorPointSolver(object):
         n = self.n
         m = self.m
         self.log.debug('Updating matrix')
-        self.H.put(self.diagQ + self.primal_reg, range(n))
-        self.H.put(-self.dual_reg, range(n,n+m))
+        self.K.put(self.diagH + self.primal_reg, range(n))
+        self.K.put(-self.dual_reg, range(n,n+m))
         return
 
     def set_system_rhs(self, **kwargs):
@@ -937,10 +948,10 @@ class RegQPInteriorPointSolver(object):
         if self.estimate_cond:
             rhsNorm = norm2(rhs)
             solnNorm = norm2(self.LBL.x)
-            Hop = PysparseLinearOperator(self.H, symmetric=True)
-            normH, _ = normest(Hop, tol=1.0e-3)
+            Kop = PysparseLinearOperator(self.K, symmetric=True)
+            normK, _ = normest(Kop, tol=1.0e-3)
             if rhsNorm > 0 and solnNorm > 0:
-                self.cond_est = solnNorm * normH / rhsNorm
+                self.cond_est = solnNorm * normK / rhsNorm
             else:
                 self.cond_est = 1.0
 
@@ -973,10 +984,10 @@ class RegQPInteriorPointSolver(object):
         Uvar = self.qp.Uvar
 
         # Residual and complementarity vectors
-        Qx = self.Q*x
-        self.qpObj = self.q + np.dot(self.c,x) + 0.5*np.dot(x,Qx)
+        Hx = self.H*x
+        self.qpObj = np.dot(self.c,x) + 0.5*np.dot(x,Hx)
         self.pFeas = self.A*x - self.b
-        self.dFeas = Qx + self.c - y*self.A
+        self.dFeas = Hx + self.c - y*self.A
         self.dFeas[self.all_lb] -= zL
         self.dFeas[self.all_ub] += zU
         self.lComp = zL*(x[self.all_lb] - Lvar[self.all_lb])
@@ -990,12 +1001,38 @@ class RegQPInteriorPointSolver(object):
             self.mu = 0.0
 
         # Scaled residual norms and duality gap
-        self.pResid = pFeasNorm / (1 + self.normb + self.normA + self.normQ)
-        self.dResid = dFeasNorm / (1 + self.normc + self.normA + self.normQ)
-        self.dual_gap = self.mu / (1 + abs(np.dot(self.c,x)) + self.normA + self.normQ)
+        self.pResid = pFeasNorm / (1 + self.normb + self.normA + self.normH)
+        self.dResid = dFeasNorm / (1 + self.normc + self.normA + self.normH)
+        self.dual_gap = self.mu / (1 + abs(np.dot(self.c,x)) + self.normA + self.normH)
 
         # Overall residual for stopping condition
         return max(self.pResid, self.dResid, self.dual_gap)
+
+    def unscale(self):
+        """Undo scaling operations, if any, to return QP to original state."""
+
+        if self.row_scale is not None and self.col_scale is not None:
+            (values, irow, jcol) = self.A.find()
+            values /= self.row_scale[irow]
+            values /= self.col_scale[jcol]
+            self.A.put(values, irow, jcol)
+
+            (values, irow, jcol) = self.H.find()
+            values /= self.col_scale[irow]
+            values /= self.col_scale[jcol]
+            self.H.put(values, irow, jcol)
+
+            self.b /= self.row_scale
+            self.c /= self.col_scale
+
+            # Recompute the norms to account for the problem scaling
+            self.normb = norm2(self.b)
+            self.normc = norm2(self.c)
+            self.normA = self.A.matrix.norm('fro')
+            self.normH = self.H.matrix.norm('fro')
+            self.diagH = self.H.take(range(self.n))
+
+        return
 
 
 class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
@@ -1048,16 +1085,16 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
-        The A and Q blocks of the matrix are also put in place since they
+        The A and H blocks of the matrix are also put in place since they
         are common to all problems.
         """
         self.sys_size = self.n + self.m
 
-        self.H = PysparseMatrix(size=self.sys_size,
-            sizeHint=self.A.nnz + self.Q.nnz + self.sys_size,
+        self.K = PysparseMatrix(size=self.sys_size,
+            sizeHint=self.A.nnz + self.H.nnz + self.sys_size,
             symmetric=True)
-        self.H[:self.n, :self.n] = self.Q
-        self.H[self.n:self.n+self.m, :self.n] = self.A
+        self.K[:self.n, :self.n] = self.H
+        self.K[self.n:self.n+self.m, :self.n] = self.A
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -1070,12 +1107,12 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         if self.initial_guess:
             self.log.debug('Setting up matrix for initial guess')
 
-            new_diag = self.diagQ + self.primal_reg_min**0.5
+            new_diag = self.diagH + self.primal_reg_min**0.5
             new_diag[self.all_lb] += 1.0
             new_diag[self.all_ub] += 1.0
 
-            self.H.put(new_diag, range(n))
-            self.H.put(-self.dual_reg_min**0.5, range(n,n+m))
+            self.K.put(new_diag, range(n))
+            self.K.put(-self.dual_reg_min**0.5, range(n,n+m))
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -1083,12 +1120,12 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
             u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
 
-            new_diag = self.diagQ + self.primal_reg
+            new_diag = self.diagH + self.primal_reg
             new_diag[self.all_lb] += self.zL / x_minus_l
             new_diag[self.all_ub] += self.zU / u_minus_x
 
-            self.H.put(new_diag, range(n))
-            self.H.put(-self.dual_reg_min**0.5, range(n,n+m))
+            self.K.put(new_diag, range(n))
+            self.K.put(-self.dual_reg_min**0.5, range(n,n+m))
 
         return
 
@@ -1100,15 +1137,15 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
         u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
 
-        new_diag = self.diagQ + self.primal_reg
+        new_diag = self.diagH + self.primal_reg
         new_diag[self.all_lb] += self.zL / x_minus_l
         new_diag[self.all_ub] += self.zU / u_minus_x
 
         n = self.n
         m = self.m
-        self.H.put(new_diag, range(n))
-        self.H.put(-self.dual_reg_min**0.5, range(n,n+m))
-        self.H.put(-self.dual_reg, range(n,n+m))
+        self.K.put(new_diag, range(n))
+        self.K.put(-self.dual_reg_min**0.5, range(n,n+m))
+        self.K.put(-self.dual_reg, range(n,n+m))
         return
 
     def set_system_rhs(self, **kwargs):

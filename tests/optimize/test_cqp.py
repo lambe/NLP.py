@@ -5,15 +5,15 @@ A short test script to test functionality of the new CQP code.
 The test problem used here is Hock-Schittkowski 21.
 """
 
-from nlp.model.nlpmodel import NLPModel
-from nlp.model.pysparsemodel import PySparseNLPModel, PySparseSlackModel
+from nlp.model.nlpmodel import SparseNLPModel
+from nlp.model.qpmodel import QPModel
 from nlp.optimize.cqp import RegQPInteriorPointSolver, RegQPInteriorPointSolver2x2
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
 
 
-class HS21(NLPModel):
+class HS21(SparseNLPModel):
 
     def __init__(self, **kwargs):
         super(HS21, self).__init__(2, m=1, name='test_class', Lcon=np.array([10]),
@@ -34,14 +34,14 @@ class HS21(NLPModel):
         c[0] = 10*x[0] - x[1]
         return c
 
-    def jac(self, x):
+    def jac_triple(self, x):
         # Return triple of numpy arrays in coordinate format
         vals = np.array([10, -1])
         rows = np.array([0, 0])
         cols = np.array([0, 1])
         return vals, rows, cols
 
-    def hess(self, x, z=None):
+    def hess_triple(self, x, z=None):
         # Return triple of numpy arrays in coordinate format
         vals = np.array([0.02, 2])
         rows = np.array([0, 1])
@@ -49,26 +49,23 @@ class HS21(NLPModel):
         return vals, rows, cols
 
 
-class SparseHS21(PySparseNLPModel, HS21):
-    pass
-
 # Configure the logger for CQP
 cqp_logger = config_logger("nlp.cqp","%(name)-8s %(levelname)-5s %(message)s")
 
 # main script
-test_prob = SparseHS21()
-test_prob_slack = PySparseSlackModel(test_prob)
+test_prob = HS21()
+test_prob_qp = QPModel(fromProb=(test_prob,None))
 use_pc = True
 use_scale = 'mc29'
 
-solver = RegQPInteriorPointSolver(test_prob_slack, mehrotra_pc=use_pc,
+solver = RegQPInteriorPointSolver(test_prob_qp, mehrotra_pc=use_pc,
     scale_type=use_scale)
 solver.solve()
-print solver.short_status
-print solver.solve_time
+print solver.status
+print solver.tsolve
 
-solver2 = RegQPInteriorPointSolver2x2(test_prob_slack, mehrotra_pc=use_pc,
+solver2 = RegQPInteriorPointSolver2x2(test_prob_qp, mehrotra_pc=use_pc,
     scale_type=use_scale)
 solver2.solve()
-print solver2.short_status
-print solver2.solve_time
+print solver2.status
+print solver2.tsolve
