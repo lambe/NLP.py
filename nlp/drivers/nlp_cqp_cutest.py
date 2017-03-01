@@ -9,8 +9,8 @@ CQP assumes the problem is convex quadratic. If a general NLP is selected,
 CQP will try to minimize the quadratic approximation at the initial point.
 """
 
-from cutest.model.cutestmodel import PySparseCUTEstModel
-from nlp.model.pysparsemodel import PySparseSlackModel
+from cutest.model.cutestmodel import CUTEstModel
+from nlp.model.qpmodel import QPModel
 from nlp.optimize.cqp import RegQPInteriorPointSolver as CQP
 from nlp.tools.logs import config_logger
 import numpy as np
@@ -65,12 +65,12 @@ for name in args.name_list:
     if name[-4:] == ".SIF":
         name = name[:-4]
 
-    prob = PySparseCUTEstModel(name)
+    prob = CUTEstModel(name)
     prob.compute_scaling_obj()
     prob.compute_scaling_cons()
 
-    slack_prob = PySparseSlackModel(prob)
-    cqp = CQP(slack_prob, mehrotra_pc=args.use_pc, scale_type=args.use_scale)
+    qp = QPModel(fromProb=(prob,None))
+    cqp = CQP(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale)
 
     # Solve the problem and print the result
     try:
