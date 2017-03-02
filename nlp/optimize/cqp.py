@@ -28,7 +28,7 @@ class RegQPInteriorPointSolver(object):
 
     Solve a convex quadratic program of the form::
 
-       minimize    cᵀx + ½ xᵀ H x
+       minimize    q + cᵀx + ½ xᵀHx
        subject to  Ax - b = 0                                  (QP)
                    l ≤ x ≤ u
 
@@ -147,6 +147,7 @@ class RegQPInteriorPointSolver(object):
 
         # Collect basic info about the problem.
         zero_pt = np.zeros(self.n)
+        self.q = qp.obj(zero_pt)
         self.b = -qp.cons(zero_pt)
         self.c = qp.grad(zero_pt)
         self.A = qp.jac(zero_pt)
@@ -221,7 +222,7 @@ class RegQPInteriorPointSolver(object):
         return
 
     def scale(self):
-        """Compute scaling factors for the problem.
+        u"""Compute scaling factors for the problem.
 
         If the solver is run with scaling, this function computes scaling
         factors for the rows and columns of the Jacobian so that the scaled
@@ -229,14 +230,14 @@ class RegQPInteriorPointSolver(object):
 
         In effect the original problem::
 
-            minimize    c' x + 1/2 x' H x
+            minimize    q + cᵀx + ½ xᵀHx
             subject to  Ax - b = 0
                         (bounds)
 
         is converted to::
 
-            minimize    (Cc)' x + 1/2 x' (CHC') x
-            subject to  R A C x - R b = 0
+            minimize    (Cc)ᵀx + ½ xᵀ(CHCᵀ)x
+            subject to  (RAC)x - Rb = 0
                         (bounds)
 
         where the diagonal matrices R and C contain row and column scaling
@@ -634,7 +635,7 @@ class RegQPInteriorPointSolver(object):
         least-squares problem::
 
             minimize    ½ xᵀHx + ½||rᴸ||² + ½||rᵁ||²
-            subject to  Ax = b
+            subject to  Ax - b = 0
                         rᴸ = x - l
                         rᵁ = u - x
 
@@ -985,7 +986,7 @@ class RegQPInteriorPointSolver(object):
 
         # Residual and complementarity vectors
         Hx = self.H*x
-        self.qpObj = np.dot(self.c,x) + 0.5*np.dot(x,Hx)
+        self.qpObj = self.q + np.dot(self.c,x) + 0.5*np.dot(x,Hx)
         self.pFeas = self.A*x - self.b
         self.dFeas = Hx + self.c - y*self.A
         self.dFeas[self.all_lb] -= zL

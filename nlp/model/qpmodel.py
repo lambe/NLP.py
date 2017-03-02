@@ -11,8 +11,8 @@ from pykrylov.linop.linop import LinearOperator
 class QPModel(NLPModel):
     u"""Generic class to represent a quadratic programming (QP) problem.
 
-    minimize    cᵀx + 1/2 xᵀHx
-    subject to  L ≤ A x ≤ U
+    minimize    q + cᵀx + 1/2 xᵀHx
+    subject to  L ≤ A x - b ≤ U
                 l ≤ x ≤ u.
     """
 
@@ -20,8 +20,8 @@ class QPModel(NLPModel):
         """Initialize a QP.
 
         The QP may be created in two ways: as a set of vector and matrix-like
-        objects or using a given NLPModel and a given point `x`. The latter
-        is useful in SQP algorithms where a QP approximation is constructed and
+        objects or using a given NLPModel and a given point. The latter is
+        useful in SQP algorithms where a QP approximation is constructed and
         solved to improve the candidate solution of the NLP.
 
         :keywords:
@@ -35,10 +35,15 @@ class QPModel(NLPModel):
                         Note: if `H` is a zero operator, the LPModel class
                         should be used instead.
 
-            :fromProb:  A group consisting of an NLPModel (of any type) and a
-                        numpy array containing the point `x` at which the
-                        QP approximation to the NLPModel is formed. If `x` is
-                        type `None`, a starting point of zero is used.
+            :opsConst:  A optional group of constant terms (`q`,`b`) for the
+                        operator interface. If not specified, they are set
+                        to zero.
+
+            :fromProb:  A group consisting of an NLPModel (of any type) and
+                        numpy arrays containing the point `x` and Lagrange
+                        multipliers `z` at which the QP approximation to the
+                        NLPModel is formed. If either `x` or `z` is type
+                        `None`, zero arrays are initialized.
 
         See the documentation of `NLPModel` for futher information.
         """
@@ -67,16 +72,38 @@ class QPModel(NLPModel):
                     raise ValueError('A has inconsistent shape')
                 m = A.shape[0]
 
+            # Get constants if any are specified
+            opsConst = kwargs.get('opsConst',None)
+
+            if opsConst is None:
+                q = 0.
+                b = np.zeros(m, dtype=np.float)
+            else:
+                q = opsConst[0]
+                b = opsConst[1]
+
+                if b is None:
+                    b = np.zeros(m, dtype=np.float)
+                else:
+                    if b.shape[0] != m:
+                        raise ValueError('b has inconsistent shape')
+
         elif fromProb is not None:
             model = fromProb[0]
             x = fromProb[1]
+            z = fromProb[2]
 
             if x is None:
                 x = np.zeros(model.n, dtype=np.float)
 
-            # Evaluate model functions to construct the QP at x
+            if z is None:
+                z = np.zeros(model.m, dtype=np.float)
+
+            # Evaluate model functions to construct the QP at (x, z)
+            q = model.obj(x)
             c = model.grad(x)
-            H = model.hess(x, np.zeros(model.m, dtype=np.float))
+            H = model.hess(x, z)
+            b = model.cons(x)
             A = model.jac(x)
 
             n = c.shape[0]
@@ -98,8 +125,10 @@ class QPModel(NLPModel):
 
         # Initialize model and store key objects
         super(QPModel, self).__init__(n=n, m=m, name=name, **kwargs)
+        self.q = q
         self.c = c
         self.H = H
+        self.b = b
         self.A = A
 
         # Default classification of constraints
@@ -115,7 +144,7 @@ class QPModel(NLPModel):
         cHx = self.hprod(x, 0, x)
         cHx *= 0.5
         cHx += self.c
-        return np.dot(cHx, x)
+        return np.dot(cHx, x) + self.q
 
     def grad(self, x):
         """Evaluate the objective gradient at x."""
@@ -126,8 +155,8 @@ class QPModel(NLPModel):
     def cons(self, x):
         """Evaluate the constraints at x."""
         if isinstance(self.A, np.ndarray):
-            return np.dot(self.A, x)
-        return self.A * x
+            return np.dot(self.A, x) + self.b
+        return self.A * x + self.b
 
     def jac(self, x):
         """Evaluate the constraints Jacobian at x."""
@@ -135,7 +164,9 @@ class QPModel(NLPModel):
 
     def jprod(self, x, p):
         """Evaluate Jacobian-vector product at x with p."""
-        return self.cons(p)
+        if isinstance(self.A, np.ndarray):
+            return np.dot(self.A, p)
+        return self.A * p
 
     def jtprod(self, x, p):
         """Evaluate transposed-Jacobian-vector product at x with p."""

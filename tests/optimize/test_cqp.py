@@ -54,7 +54,7 @@ cqp_logger = config_logger("nlp.cqp","%(name)-8s %(levelname)-5s %(message)s")
 
 # main script
 test_prob = HS21()
-test_prob_qp = QPModel(fromProb=(test_prob,None))
+test_prob_qp = QPModel(fromProb=(test_prob,None,None))
 use_pc = True
 use_scale = 'mc29'
 

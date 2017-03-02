@@ -69,7 +69,7 @@ for name in args.name_list:
     prob.compute_scaling_obj()
     prob.compute_scaling_cons()
 
-    qp = QPModel(fromProb=(prob,None))
+    qp = QPModel(fromProb=(prob,None,None))
     cqp = CQP(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale)
 
     # Solve the problem and print the result
