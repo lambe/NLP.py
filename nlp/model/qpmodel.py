@@ -5,13 +5,14 @@ import logging
 import numpy as np
 from nlp.model.kkt import KKTresidual
 from nlp.model.nlpmodel import NLPModel
+from pysparse.sparse import PysparseMatrix
 from pykrylov.linop.linop import LinearOperator
 
 
 class QPModel(NLPModel):
     u"""Generic class to represent a quadratic programming (QP) problem.
 
-    minimize    q + cᵀx + 1/2 xᵀHx
+    minimize    q + cᵀx + ½ xᵀHx
     subject to  L ≤ A x - b ≤ U
                 l ≤ x ≤ u.
     """
@@ -188,4 +189,219 @@ class QPModel(NLPModel):
             return np.dot(self.H, p)
         return self.H * p
 
+
+class LSQModel(QPModel):
+    u"""Generic class to represent a linear least-squares (LSQ) problem.
+
+    minimize    q + cᵀx + ½ xᵀHx + ½ ||Cx - d||²
+    subject to  L ≤ A x - b ≤ U
+                l ≤ x ≤ u.
+    """
+
+    def __init__(self, name='GenericLSQ', **kwargs):
+        u"""Initialize an LSQ problem.
+
+        The variables `q`, `c`, `H`, `A`, and `b` are initialized in the same
+        way as in QPModel. The least-squares terms are added in the separate
+        argument :lsqOps:. To account for the least-squares terms, the
+        original values of `q`, `c`, and `H`, are modified according to:
+
+        H_new = H + CᵀC
+        c_new = c + dᵀC
+        q_new = q + ½dᵀd
+
+        Note that this construction requires the :fromOps: keyword to be
+        defined already.
+
+        :keywords:
+
+            :lsqOps:    A group of operator objects in the form (`d`,`C`)
+                        where `d` is a numpy array and `C` is a dense matrix
+                        sparse matrix, or linear operator.
+
+            :fromOps:   Same meaning as in `QPModel`
+
+            :opsConst:  Same meaning as in `QPModel`
+
+        See the documentation of `NLPModel` for further information.
+        """
+
+        # Extract these options and update their values
+        fromOps = kwargs.pop('fromOps',None)
+        opsConst = kwargs.pop('opsConst',None)
+
+        lsqOps = kwargs.get('lsqOps',None)
+
+        if fromOps is None or lsqOps is None:
+            raise ValueError('Not enough information; LSQ model not created')
+
+        c = fromOps[0]
+        H = fromOps[1]
+        A = fromOps[2]
+
+        d = lsqOps[0]
+        C = lsqOps[1]
+
+        # Basic data and shape checks
+        n = C.shape[1]
+        if C.shape[0] != d.shape[0]:
+            raise ValueError('C and d have inconsistent shape')
+
+        if c is None:
+            c = np.zeros(n, dtype=np.float)
+        else:
+            if c.shape[0] != n:
+                raise ValueError('c has inconsistent shape')
+
+        if opsConst is None:
+            q = 0.
+            b = None
+        else:
+            q = opsConst[0]
+            if q is None:
+                q = 0.
+
+        # Create new arguments for general QP Model
+        q = q + 0.5*np.dot(d,d)
+
+        if isinstance(C, np.ndarray):
+            c = c + np.dot(C.T,d)
+        else:
+            c = c + C.T * d
+
+        if H is None:
+            if isinstance(C, np.ndarray):
+                H = np.dot(C,C)
+            elif isinstance(C, PysparseMatrix):
+                H = C.T * C
+            elif isinstance(C, LinearOperator):
+                H = LinearOperator(n, n, lambda x: C.T * (C * x),
+                    symmetric=True, dtype=np.float)
+
+        elif type(C) == type(H):
+            if isinstance(C, np.ndarray):
+                H = H + np.dot(C,C)
+            elif isinstance(C, PysparseMatrix):
+                H = H + C.T * C
+            elif isinstance(C, LinearOperator):
+                # Does the following make sense in Python?
+                H = LinearOperator(n, n, lambda x: (H*x + C.T * (C * x)),
+                    symmetric=True, dtype=np.float)
+
+        else:
+            raise TypeError('C and H are incompatible types')
+
+        # Finally, call QPModel constructor to finish assembling model
+        super(LSQModel, self).__init__(name=name, fromOps=(c, H, A),
+            opsConst=(q, b), **kwargs)
+        self.C = C
+        self.d = d
+
+    def lsq_cons(self, x):
+        """Evaluate the least-squares residuals at x."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C, x) - self.d
+        return self.C * x - d
+
+    def lsq_jac(self, x):
+        """Evaluate the least-squares Jacobian at x."""
+        return self.C
+
+    def lsq_jprod(self, x, p):
+        """Evaluate the least-squares Jacobian-vector product at x with p."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C, p)
+        return self.C * p
+
+    def lsq_jtprod(self, x, p):
+        """Evaluate the least-squares transposed-Jacobian-vector product
+        at x with p."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C.T, p)
+        return self.C.T * p
+
+
+class RLSQModel(QPModel,LSQModel):
+    u"""Generic class to represent a transformed linear least-squares problem.
+
+    The transformation consists of adding a special set of variables
+
+    r = d - Cx
+
+    to the problem in LSQModel. The resulting problem is:
+
+    minimize    q + cᵀx + ½ xᵀHx + ½ ||r||²
+    w.r.t.      x, r
+    subject to  Cx - d + r = 0
+                L ≤ A x - b ≤ U
+                l ≤ x ≤ u.
+
+    This transformation allows algorithms to exploit sparsity in `C`. The
+    variables `r` need to be kept separate from `x` because of their
+    special nature in solution algorithms.
+
+    Because of the need to keep `r` and `x` explicitly separate, this
+    class defines two additional methods specific to the least-squares
+    problem structure. lsq_cons() returns the result of r = d - Cx, and
+    lsq_jac() returns `C`. These methods may be used in dedicated least-
+    squares solvers for convenience.
+    """
+
+    def __init__(self, name='GenericRLSQ', **kwargs):
+        u"""Initialize a transformed LSQ problem.
+
+        In this case, the standard QP operators pass through unchanged. All
+        we have to do is check for errors in the least-squares terms in the
+        :lsqOps: key word.
+
+        :keywords:
+
+            :lsqOps:    Same meaning as in `LSQModel`
+
+            :fromOps:   Same meaning as in `QPModel`
+
+            :opsConst:  Same meaning as in `QPModel`
+
+        See the documentation of `NLPModel` for further information.
+        """
+
+        lsqOps = kwargs.get('lsqOps',None)
+        fromOps = kwargs.get('fromOps',None)
+
+        if fromOps is None or lsqOps is None:
+            raise ValueError('Not enough information; LSQ model not created')
+
+        c = fromOps[0]
+
+        d = lsqOps[0]
+        C = lsqOps[1]
+
+        # Basic data and shape checks
+        n = C.shape[1]
+        if C.shape[0] != d.shape[0]:
+            raise ValueError('C and d have inconsistent shape')
+
+        # In the basic case of solving an unconstrained least-squares problem,
+        # we need c to be well-defined to not generate errors
+        if c is None:
+            c = np.zeros(n, dtype=np.float)
+            fromOps[0] = c
+        else:
+            if c.shape[0] != n:
+                raise ValueError('c has inconsistent shape')
+
+        # Call QPModel constructor to finish assembling model
+        super(LSQModel, self).__init__(name=name, **kwargs)
+        self.C = C
+        self.d = d
+
+    def lsq_obj(self, r):
+        """Evaluate the objective terms involving r."""
+        return 0.5*np.dot(r,r)
+
+    def lsq_cons(self, x, r):
+        """Evaluate the least-squares residuals at (x,r)."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C, x) - self.d + r
+        return self.C * x - d + r
 
