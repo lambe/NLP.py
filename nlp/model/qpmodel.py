@@ -104,7 +104,7 @@ class QPModel(NLPModel):
             q = model.obj(x)
             c = model.grad(x)
             H = model.hess(x, z)
-            b = model.cons(x)
+            b = -model.cons(x)
             A = model.jac(x)
 
             n = c.shape[0]
@@ -156,8 +156,8 @@ class QPModel(NLPModel):
     def cons(self, x):
         """Evaluate the constraints at x."""
         if isinstance(self.A, np.ndarray):
-            return np.dot(self.A, x) + self.b
-        return self.A * x + self.b
+            return np.dot(self.A, x) - self.b
+        return self.A * x - self.b
 
     def jac(self, x):
         """Evaluate the constraints Jacobian at x."""
