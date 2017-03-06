@@ -171,8 +171,21 @@ class SlackModel(NLPModel):
 
         return c
 
+    def lsq_cons(self, x, r):
+        """Evaluate the least-squares residuals at (x,r).
+
+        This method only applies to least-squares models.
+        """
+        on = self.original_n
+        model = self.model
+
+        if hasattr(model,'lsq_cons'):
+            return model.lsq_cons(x[:on],r)
+        else:
+            raise TypeError('self.model is not a least-squares model.')
+
     def jprod(self, x, v, **kwargs):
-        """Evaluate Jacobian-vector product at x with p.
+        """Evaluate Jacobian-vector product at x with v.
 
         See the documentation of :meth:`jac` for more details on how the
         constraints are ordered.
@@ -193,7 +206,7 @@ class SlackModel(NLPModel):
         return p
 
     def jtprod(self, x, v, **kwargs):
-        """Evaluate transposed-Jacobian-vector product at x with p.
+        """Evaluate transposed-Jacobian-vector product at x with v.
 
         See the documentation of :meth:`jac` for more details on how the
         constraints are ordered.
@@ -237,7 +250,7 @@ class SlackModel(NLPModel):
         upperC = model.upperC
         rangeC = model.rangeC
 
-        J = model.jac(x, **kwargs)
+        J = model.jac(x[:on], **kwargs)
 
         if isinstance(J, np.ndarray):
             # Create a numpy array, populate the two main blocks, and return
@@ -268,6 +281,79 @@ class SlackModel(NLPModel):
 
         return new_J
 
+    def lsq_jprod(self, x, v):
+        """Evaluate the least-squares Jacobian-vector product at x with v.
+
+        Because the slack variables create a zero block in the least-squares
+        operator, this is trivial.
+        """
+        on = self.original_n
+        return model.lsq_jprod(x[:on], v[:on])
+
+    def lsq_jtprod(self, x, v):
+        """Evaluate the least-squares transpose-Jacobian-vector product at x
+        with v.
+
+        Because the slack variables create a zero block in the least-squares
+        operator, there is a zero block in the output vector.
+        """
+        on = self.original_n
+        n = self.n
+
+        p = np.zeros(n)
+        p[:on] = model.lsq_jtprod(x[:on], v)
+        return p
+
+    def lsq_jac(self, x):
+        """Evaluate the least-squares Jacobian at x.
+
+        The modified operator has the form:
+
+            [ C     0 ]
+
+        where the columns correspond to the variables `x` and `s`.
+
+        This method only applies to least-squares models.
+        """
+        n = self.n
+        on = self.original_n
+        model = self.model
+
+        if hasattr(model, 'p'):
+            p = model.p
+        else:
+            raise TypeError('self.model is not a least-squares model.')
+
+        C = model.lsq_jac(x[:on])
+
+        if isinstance(C, np.ndarray):
+            # Create a larger numpy array and populate
+            new_C = np.zeros([p,n])
+            new_C[:, :on] = C
+
+        elif isinstance(C, psp):
+            # Create a larger Pysparse matrix and populate
+            new_C = psp(nrow=p, ncol=n, sizeHint=model.nnzc)
+            new_C[:, :on] = C
+
+        elif isinstance(C, LinearOperator):
+            # Create a new linear operator calling the SlackModel jprod() and
+            # jtprod() methods
+            new_C = self.lsq_jop(x)
+
+        else:
+            raise TypeError('Least-squares return type not recognized.')
+
+        return new_C
+
+    def lsq_jop(self, x):
+        """Obtain the updated least-squares Jacobian as a linear operator."""
+        return LinearOperator(self.n, self.p,
+                              lambda v: self.lsq_jprod(x,v),
+                              matvec_transp=lambda u: self.lsq_jtprod(x,u),
+                              symmetric=False,
+                              dtype=np.float)
+
     def hprod(self, x, y, v, **kwargs):
         """Hessian-vector product.
 
@@ -291,7 +377,7 @@ class SlackModel(NLPModel):
         model = self.model
         on = self.original_n
 
-        H = model.hess(x,z,**kwargs)
+        H = model.hess(x[:on],z,**kwargs)
 
         if isinstance(H, np.ndarray):
             # Create a larger numpy array, with slack terms zero

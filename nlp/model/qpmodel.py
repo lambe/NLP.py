@@ -219,6 +219,9 @@ class LSQModel(QPModel):
                         where `d` is a numpy array and `C` is a dense matrix
                         sparse matrix, or linear operator.
 
+            :nnzc:      The number of nonzeros in the least-squares Jacobian.
+                        Default = n*p, i.e., a dense matrix.
+
             :fromOps:   Same meaning as in `QPModel`
 
             :opsConst:  Same meaning as in `QPModel`
@@ -296,6 +299,8 @@ class LSQModel(QPModel):
             opsConst=(q, b), **kwargs)
         self.C = C
         self.d = d
+        self.p = C.shape[0]
+        self.nnzc = kwargs.get('nnzc',self.p*self.n)
 
     def lsq_cons(self, x):
         """Evaluate the least-squares residuals at x."""
@@ -321,7 +326,7 @@ class LSQModel(QPModel):
         return self.C.T * p
 
 
-class RLSQModel(QPModel,LSQModel):
+class RLSQModel(QPModel):
     u"""Generic class to represent a transformed linear least-squares problem.
 
     The transformation consists of adding a special set of variables
@@ -358,6 +363,8 @@ class RLSQModel(QPModel,LSQModel):
 
             :lsqOps:    Same meaning as in `LSQModel`
 
+            :nnzc:      Same meaning as in `LSQModel`
+
             :fromOps:   Same meaning as in `QPModel`
 
             :opsConst:  Same meaning as in `QPModel`
@@ -391,9 +398,11 @@ class RLSQModel(QPModel,LSQModel):
                 raise ValueError('c has inconsistent shape')
 
         # Call QPModel constructor to finish assembling model
-        super(LSQModel, self).__init__(name=name, **kwargs)
+        super(RLSQModel, self).__init__(name=name, **kwargs)
         self.C = C
         self.d = d
+        self.p = C.shape[0]
+        self.nnzc = kwargs.get('nnzc',self.p*self.n)
 
     def lsq_obj(self, r):
         """Evaluate the objective terms involving r."""
@@ -405,3 +414,19 @@ class RLSQModel(QPModel,LSQModel):
             return np.dot(self.C, x) - self.d + r
         return self.C * x - d + r
 
+    def lsq_jac(self, x):
+        """Evaluate the least-squares Jacobian at x."""
+        return self.C
+
+    def lsq_jprod(self, x, p):
+        """Evaluate the least-squares Jacobian-vector product at x with p."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C, p)
+        return self.C * p
+
+    def lsq_jtprod(self, x, p):
+        """Evaluate the least-squares transposed-Jacobian-vector product
+        at x with p."""
+        if isinstance(self.C, np.ndarray):
+            return np.dot(self.C.T, p)
+        return self.C.T * p
