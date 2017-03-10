@@ -155,9 +155,14 @@ class RegQPInteriorPointSolver(object):
             self.C = qp.lsq_jac(zero_pt)
             if not isinstance(self.C, PysparseMatrix):
                 raise TypeError('Matrix C must be a Pysparse matrix.')
+
+            self.normd = norm2(self.d)
+            self.normC = self.C.matrix.norm('fro')
         else:
             self.d = np.zeros(0, dtype=np.float)
+            self.normd = 0.
             self.C = PysparseMatrix(nrow=0, ncol=self.n, sizeHint=0, symmetric=False)
+            self.normC = 0.
 
         if not isinstance(self.A, PysparseMatrix):
             raise TypeError('Matrices H and A must be Pysparse matrices.')
@@ -1052,18 +1057,21 @@ class RegQPInteriorPointSolver(object):
 
         pFeasNorm = norm2(self.pFeas)
         dFeasNorm = norm2(self.dFeas)
+        lsqNorm = norm2(self.lsqRes)
         if (self.nl + self.nu) > 0:
             self.mu = (self.lComp.sum() + self.uComp.sum()) / (self.nl + self.nu)
         else:
             self.mu = 0.0
 
         # Scaled residual norms and duality gap
-        self.pResid = pFeasNorm / (1 + self.normb + self.normA + self.normH)
-        self.dResid = dFeasNorm / (1 + self.normc + self.normA + self.normH)
-        self.dual_gap = self.mu / (1 + abs(np.dot(self.c,x)) + self.normA + self.normH)
+        norm_sum = self.normA + self.normH + self.normC
+        self.pResid = pFeasNorm / (1 + self.normb + norm_sum)
+        self.dResid = dFeasNorm / (1 + self.normc + norm_sum)
+        self.lsqResid = lsqNorm / (1 + self.normd + norm_sum)
+        self.dual_gap = self.mu / (1 + abs(np.dot(self.c,x)) + norm_sum)
 
         # Overall residual for stopping condition
-        return max(self.pResid, self.lsqRes, self.dResid, self.dual_gap)
+        return max(self.pResid, self.lsqResid, self.dResid, self.dual_gap)
 
     def unscale(self):
         """Undo scaling operations, if any, to return QP to original state."""
