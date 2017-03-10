@@ -33,9 +33,6 @@ class QPModel(NLPModel):
                         In addition, `A` may be type `None` to model
                         unconstrained problems.
 
-                        Note: if `H` is a zero operator, the LPModel class
-                        should be used instead.
-
             :opsConst:  A optional group of constant terms (`q`,`b`) for the
                         operator interface. If not specified, they are set
                         to zero.
@@ -62,12 +59,20 @@ class QPModel(NLPModel):
             if H.shape[0] != n or H.shape[1] != n:
                 raise ValueError('H has inconsistent shape')
 
+            # H and A should be consistent
             if A is None:
                 m = 0
-                A = LinearOperator(n, 0,
-                                   lambda x: np.empty((0, 1)),
-                                   matvec_transp=lambda y: np.empty((n, 0)),
-                                   dtype=np.float)
+                if isinstance(H, np.ndarray):
+                    A = np.zeros([0,n], dtype=np.float)
+                elif isinstance(H, PysparseMatrix):
+                    A = PysparseMatrix(nrow=0, ncol=n, sizeHint=0, symmetric=False)
+                elif isinstance(H, LinearOperator):
+                    A = LinearOperator(n, 0,
+                                       lambda x: np.empty((0, 1)),
+                                       matvec_transp=lambda y: np.empty((n, 0)),
+                                       dtype=np.float)
+                else:
+                    raise ValueError('H has unrecognized type')
             else:
                 if A.shape[1] != n:
                     raise ValueError('A has inconsistent shape')
@@ -292,7 +297,7 @@ class LSQModel(QPModel):
         """Evaluate the least-squares residuals at (x,r)."""
         if isinstance(self.C, np.ndarray):
             return np.dot(self.C, x) - self.d + r
-        return self.C * x - d + r
+        return self.C * x - self.d + r
 
     def lsq_jac(self, x):
         """Evaluate the least-squares Jacobian at x."""
