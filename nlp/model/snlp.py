@@ -348,7 +348,7 @@ class SlackModel(NLPModel):
 
     def lsq_jop(self, x):
         """Obtain the updated least-squares Jacobian as a linear operator."""
-        return LinearOperator(self.n, self.p,
+        return LinearOperator(self.n, self.model.p,
                               lambda v: self.lsq_jprod(x,v),
                               matvec_transp=lambda u: self.lsq_jtprod(x,u),
                               symmetric=False,
