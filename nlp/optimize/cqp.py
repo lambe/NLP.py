@@ -1048,7 +1048,7 @@ class RegQPInteriorPointSolver(object):
         if self.use_lsq:
             self.lsqRes = self.C*x + r - self.d
         else:
-            self.lsqRes = 0.
+            self.lsqRes = np.zeros(0, dtype=np.float)
         self.dFeas = Hx + self.c - y*self.A - r*self.C
         self.dFeas[self.all_lb] -= zL
         self.dFeas[self.all_ub] += zU
@@ -1098,7 +1098,7 @@ class RegQPInteriorPointSolver(object):
             self.diagH = self.H.take(range(self.n))
 
             # Modify least-squares operator, if any
-            if use_lsq:
+            if self.use_lsq:
                 (values, irow, jcol) = self.C.find()
                 values /= self.col_scale[jcol]
                 self.C.put(values, irow, jcol)
