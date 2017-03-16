@@ -10,7 +10,7 @@ CQP will try to minimize the quadratic approximation at the initial point.
 """
 
 from cutest.model.cutestmodel import CUTEstModel
-from nlp.model.qpmodel import QPModel
+from nlp.model.qpmodel import QPModel, LSQModel
 from nlp.optimize.cqp import RegQPInteriorPointSolver as CQP
 from nlp.tools.logs import config_logger
 import numpy as np
@@ -69,7 +69,10 @@ for name in args.name_list:
     prob.compute_scaling_obj()
     prob.compute_scaling_cons()
 
+    # Test either the standard QP or the least-squares version
     qp = QPModel(fromProb=(prob,None,None))
+    # qp = LSQModel(fromProb=(prob,None,None))
+
     cqp = CQP(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale)
 
     # Solve the problem and print the result

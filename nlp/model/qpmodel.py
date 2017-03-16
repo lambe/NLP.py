@@ -6,7 +6,7 @@ import numpy as np
 from nlp.model.kkt import KKTresidual
 from nlp.model.nlpmodel import NLPModel
 from pysparse.sparse import PysparseMatrix
-from pykrylov.linop.linop import LinearOperator
+from pykrylov.linop.linop import LinearOperator, ReducedLinearOperator
 
 
 class QPModel(NLPModel):
@@ -234,9 +234,6 @@ class LSQModel(QPModel):
         in the same way as in QPModel. The least-squares terms are added in
         the separate argument :lsqOps:.
 
-        For now, only the :fromOps: keyword is supported for setting up the
-        regular QP operators.
-
         :keywords:
 
             :lsqOps:    A group of operator objects in the form (`d`,`C`)
@@ -250,44 +247,106 @@ class LSQModel(QPModel):
 
             :opsConst:  Same meaning as in `QPModel`
 
+            :fromProb:  Same meaning as in `QPModel`
+                        The difference is that equality constraints are
+                        transferred to the least-squares operator
+                        automatically. The rest of the QP is initialized
+                        using the fromOps keyword.
+
         See the documentation of `NLPModel` for further information.
         """
 
         lsqOps = kwargs.get('lsqOps',None)
         fromOps = kwargs.get('fromOps',None)
 
-        if fromOps is None or lsqOps is None:
-            raise ValueError('Not enough information; LSQModel not created')
+        fromProb = kwargs.pop('fromProb',None)
 
-        c = fromOps[0]
+        if fromOps is not None and lsqOps is not None:
+            c = fromOps[0]
 
-        d = lsqOps[0]
-        C = lsqOps[1]
+            d = lsqOps[0]
+            C = lsqOps[1]
 
-        # Basic data and shape checks
-        n = C.shape[1]
-        if C.shape[0] != d.shape[0]:
-            raise ValueError('C and d have inconsistent shape')
+            # Basic data and shape checks
+            n = C.shape[1]
+            if C.shape[0] != d.shape[0]:
+                raise ValueError('C and d have inconsistent shape')
+            p = C.shape[0]
 
-        # In the basic case of solving an unconstrained least-squares problem,
-        # we need c to be well-defined to not generate errors
-        #
-        # Dev note: make sure c is updated in arguments passed to
-        # super().__init__()
-        #
-        if c is None:
-            c = np.zeros(n, dtype=np.float)
-            fromOps[0] = c
+            # In the basic case of solving an unconstrained least-squares problem,
+            # we need c to be well-defined to not generate errors
+            if c is None:
+                c = np.zeros(n, dtype=np.float)
+                fromOps[0] = c
+            else:
+                if c.shape[0] != n:
+                    raise ValueError('c has inconsistent shape')
+
+            nnzc = kwargs.get('nnzc',self.p*self.n)
+
+        elif fromProb is not None:
+            model = fromProb[0]
+            x = fromProb[1]
+            z = fromProb[2]
+
+            if x is None:
+                x = np.zeros(model.n, dtype=np.float)
+
+            if z is None:
+                z = np.zeros(model.m, dtype=np.float)
+
+            # Evaluate model functions to construct the basic QP at (x, z)
+            q = model.obj(x)
+            c = model.grad(x)
+            H = model.hess(x, z)
+            old_b = -model.cons(x)
+            old_A = model.jac(x)
+
+            # Now construct C and d from the equality constraints of the model
+            n = model.n
+            p = model.nequalC
+            nnzc = n*p
+            m = model.m - p
+            eq = np.array(model.equalC, dtype=np.int)
+            ineq = np.setdiff1d(np.arange(model.m, dtype=np.int), eq)
+
+            d = old_b[eq].copy()
+            b = old_b[ineq].copy()
+            if isinstance(old_A, np.ndarray):
+                C = old_A[eq,:].copy()
+                A = old_A[ineq,:].copy()
+            elif isinstance(old_A, PysparseMatrix):
+                C = old_A[eq,:].copy()              # Check copy syntax
+                A = old_A[ineq,:].copy()
+                nnzc = C.nnz
+            elif isinstance(old_A, LinearOperator):
+                # Use reduced linear operators with appropriate masks
+                all_x = np.arange(n, dtype=np.int)
+                C = ReducedLinearOperator(old_A,eq,all_x)
+                A = ReducedLinearOperator(old_A,ineq,all_x)
+            else:
+                raise ValueError('A has unrecognized type')
+
+            kwargs['fromOps'] = (c,H,A)
+            kwargs['opsConst'] = (q,b)
+
+            kwargs['Lvar'] = model.Lvar
+            kwargs['Uvar'] = model.Uvar
+            kwargs['Lcon'] = model.Lcon[ineq]
+            kwargs['Ucon'] = model.Ucon[ineq]
+
+            name = model.name
+            kwargs['nnzj'] = min(0, model.nnzj - nnzc)
+            kwargs['nnzh'] = model.nnzh
         else:
-            if c.shape[0] != n:
-                raise ValueError('c has inconsistent shape')
+            raise ValueError('Not enough information; LSQModel not created')
 
         # Call QPModel constructor to finish assembling model
         super(LSQModel, self).__init__(name=name, **kwargs)
         self.C = C
         self.d = d
-        self.p = C.shape[0]
-        self.nnzc = kwargs.get('nnzc',self.p*self.n)
+        self.p = p
+        self.nnzc = nnzc
 
     def lsq_obj(self, r):
         """Evaluate the objective terms involving r."""
