@@ -257,7 +257,7 @@ class SlackModel(NLPModel):
             new_J = np.zeros([m,n])
 
             new_J[:, :on] = J
-            new_J[lowerC, self.sL] = -1.
+            new_J[lowerC, self.sL] = -1.    # Uses Numpy slicing rules
             new_J[upperC, self.sU] = -1.
             new_J[rangeC, self.sR] = -1.
 
@@ -267,9 +267,9 @@ class SlackModel(NLPModel):
             new_J = psp(nrow=m, ncol=n, sizeHint=nnzJ)
 
             new_J[:, :on] = J
-            new_J[lowerC, self.sL] = -1. # Test these calls on interface
-            new_J[upperC, self.sU] = -1.
-            new_J[rangeC, self.sR] = -1.
+            new_J.put(-1.0, lowerC, self.sL)
+            new_J.put(-1.0, upperC, self.sU)
+            new_J.put(-1.0, rangeC, self.sR)
 
         elif isinstance(J, LinearOperator):
             # Create a new linear operator calling the SlackModel jprod() and
