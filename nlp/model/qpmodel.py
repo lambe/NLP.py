@@ -282,7 +282,7 @@ class LSQModel(QPModel):
                 if c.shape[0] != n:
                     raise ValueError('c has inconsistent shape')
 
-            nnzc = kwargs.get('nnzc',self.p*self.n)
+            nnzc = kwargs.get('nnzc',p*n)
 
         elif fromProb is not None:
             model = fromProb[0]
