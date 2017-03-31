@@ -395,8 +395,6 @@ class RegQPInteriorPointSolver(object):
         """
         Lvar = self.qp.Lvar
         Uvar = self.qp.Uvar
-        nl = self.nl
-        nu = self.nu
 
         # Setup the problem
         self.scale()
@@ -478,18 +476,14 @@ class RegQPInteriorPointSolver(object):
                 (alpha_p, index_p, is_up_p) = self.max_primal_step_length(dx_aff)
                 (alpha_d, index_d, is_up_d) = self.max_dual_step_length(dzL_aff, dzU_aff)
 
-                # Estimate duality gap after affine-scaling step.
-                lComp_aff = (zL + alpha_d*dzL_aff)*(x[self.all_lb] + \
-                    alpha_p*dx_aff[self.all_lb] - Lvar[self.all_lb])
-                uComp_aff = (zU + alpha_d*dzU_aff)*(Uvar[self.all_ub] - \
-                    x[self.all_ub] - alpha_p*dx_aff[self.all_ub])
+                # Estimate complementarity after affine-scaling step.
+                (mu_aff, _, _) = self._check_complementarity(x + alpha_p*dx_aff,
+                    zL + alpha_d*dzL_aff, zU + alpha_d*dzU_aff)
 
                 # Incorporate predictor information for corrector step.
-                if (nl + nu) > 0:
-                    mu_aff = (lComp_aff.sum() + uComp_aff.sum()) / (nl + nu)
+                if self.mu > 0:
                     sigma = (mu_aff / self.mu)**3
                 else:
-                    mu_aff = 0.0
                     sigma = 0.0
 
             else:
@@ -506,81 +500,7 @@ class RegQPInteriorPointSolver(object):
             self.dual_reg = max(self.dual_reg / 10, self.dual_reg_min)
             self.primal_reg = max(self.primal_reg / 10, self.primal_reg_min)
 
-            # Compute largest allowed primal and dual stepsizes.
-            (alpha_p, index_p, is_up_p) = self.max_primal_step_length(dx)
-            (alpha_d, index_d, is_up_d) = self.max_dual_step_length(dzL, dzU)
-
-            # Define fraction-to-the-boundary factor and compute the true
-            # step sizes
-            tau = max(.995, 1.0 - self.mu)
-
-            if self.mehrotra_pc:
-                # Compute actual stepsize using Mehrotra's heuristic.
-
-                if index_p == index_d and is_up_p == is_up_d:
-                    # If both are -1, do nothing, since the step remains
-                    # strictly feasible and alpha_p = alpha_d = 1
-                    if index_p != -1:
-                        # There is a division by zero in Mehrotra's heuristic
-                        # Fall back on classical rule.
-                        alpha_p *= tau
-                        alpha_d *= tau
-                else:
-                    mult = 0.01
-                    lComp_temp = (zL + alpha_d*dzL)*(x[self.all_lb] + \
-                        alpha_p*dx[self.all_lb] - Lvar[self.all_lb])
-                    uComp_temp = (zU + alpha_d*dzU)*(Uvar[self.all_ub] - \
-                        x[self.all_ub] - alpha_p*dx[self.all_ub])
-                    mu_temp = (lComp_temp.sum() + uComp_temp.sum()) / (nl + nu)
-
-                    # If alpha_p < 1.0, compute a gamma_p such that the
-                    # complementarity of the updated (x,z) pair is mult*mu_temp
-                    if index_p != -1:
-                        if is_up_p:
-                            ref_index = self.all_ub.index(index_p)
-                            gamma_p = mult * mu_temp
-                            gamma_p /= (zU[ref_index] + alpha_d*dzU[ref_index])
-                            gamma_p -= (Uvar[index_p] - x[index_p])
-                            gamma_p /= -(alpha_p*dx[index_p])
-                        else:
-                            ref_index = self.all_lb.index(index_p)
-                            gamma_p = mult * mu_temp
-                            gamma_p /= (zL[ref_index] + alpha_d*dzL[ref_index])
-                            gamma_p -= (x[index_p] - Lvar[index_p])
-                            gamma_p /= (alpha_p*dx[index_p])
-
-                        # If mu_temp is very small, gamma_p = 1. is possible due to
-                        # a cancellation error in the gamma_p calculation above.
-                        # Therefore, set a maximum value of alpha_p < 1 to prevent
-                        # division-by-zero errors later in the program.
-                        alpha_p *= min(max(1 - mult, gamma_p), 1. - 1.e-16)
-
-                    # If alpha_d < 1.0, compute a gamma_d such that the
-                    # complementarity of the updated (x,z) pair is mult*mu_temp
-                    if index_d != -1:
-                        if is_up_d:
-                            ref_index = self.all_ub.index(index_d)
-                            gamma_d = mult * mu_temp
-                            gamma_d /= (Uvar[index_d] - x[index_d] - alpha_p*dx[index_d])
-                            gamma_d -= zU[ref_index]
-                            gamma_d /= (alpha_d*dzU[ref_index])
-                        else:
-                            ref_index = self.all_lb.index(index_d)
-                            gamma_d = mult * mu_temp
-                            gamma_d /= (x[index_d] + alpha_p*dx[index_d] - Lvar[index_d])
-                            gamma_d -= zL[ref_index]
-                            gamma_d /= (alpha_d*dzL[ref_index])
-
-                        # If mu_temp is very small, gamma_d = 1. is possible due to
-                        # a cancellation error in the gamma_d calculation above.
-                        # Therefore, set a maximum value of alpha_d < 1 to prevent
-                        # division-by-zero errors later in the program.
-                        alpha_d *= min(max(1 - mult, gamma_d), 1. - 1.e-16)
-
-            else:
-                # Use the standard fraction-to-the-boundary rule
-                alpha_p *= tau
-                alpha_d *= tau
+            (alpha_p, alpha_d) = self._compute_max_steps(dx, dzL, dzU)
 
             # Update iterates and perturbation vectors.
             x += alpha_p * dx
@@ -667,7 +587,7 @@ class RegQPInteriorPointSolver(object):
         return
 
     def set_initial_guess(self):
-        """Compute initial guess according the Mehrotra's heuristic.
+        u"""Compute initial guess according the Mehrotra's heuristic.
 
         Initial values of x are computed as the solution to the
         least-squares problem::
@@ -681,8 +601,8 @@ class RegQPInteriorPointSolver(object):
 
             [ H   Aᵀ   I   I] [x ]   [0 ]
             [ A   0    0   0] [y']   [b ]
-            [ I   0   -I   0] [rᴸ] = [l ]
-            [ I   0    0  -I] [rᵁ]   [u ].
+            [ I   0   -I   0] [zᴸ'] = [l ]
+            [ I   0    0  -I] [zᵁ']   [u ].
 
         Initial values for the multipliers y and z are chosen as the
         solution to the least-squares problem::
@@ -704,7 +624,7 @@ class RegQPInteriorPointSolver(object):
         sqrt(self.primal_reg_min) * I and the (2,2) block is perturbed by
         sqrt(self.dual_reg_min) * I.
 
-        The values of x', y', rᴸ, and rᵁ are discarded after solving the
+        The values of x', y', zᴸ', and zᵁ' are discarded after solving the
         linear systems.
 
         The values of x and z are subsequently adjusted to ensure they
@@ -879,6 +799,91 @@ class RegQPInteriorPointSolver(object):
 
         return (alpha_max, ind_max, is_upper)
 
+    def _compute_max_steps(self, dx, dzL, dzU):
+        """Compute the maximum step lengths given the directions."""
+
+        x = self.x
+        zL = self.zL
+        zU = self.zU
+        Uvar = self.qp.Uvar
+        Lvar = self.qp.Lvar
+
+        # Compute largest allowed primal and dual stepsizes.
+        (alpha_p, index_p, is_up_p) = self.max_primal_step_length(dx)
+        (alpha_d, index_d, is_up_d) = self.max_dual_step_length(dzL, dzU)
+
+        # Define fraction-to-the-boundary factor and compute the true
+        # step sizes
+        tau = max(.995, 1.0 - self.mu)
+
+        if self.mehrotra_pc:
+            # Compute actual stepsize using Mehrotra's heuristic.
+
+            if index_p == index_d and is_up_p == is_up_d:
+                # If both are -1, do nothing, since the step remains
+                # strictly feasible and alpha_p = alpha_d = 1; otherwise,
+                # there is a division by zero in Mehrotra's heuristic, so
+                # we fall back on the standard fraction-to-boundary rule.
+                if index_p != -1:
+                    alpha_p *= tau
+                    alpha_d *= tau
+            else:
+                mult = 0.01
+
+                (mu_temp, _, _) = self._check_complementarity(x + alpha_p*dx,
+                    zL + alpha_d*dzL, zU + alpha_d*dzU)
+
+                # If alpha_p < 1.0, compute a gamma_p such that the
+                # complementarity of the updated (x,z) pair is mult*mu_temp
+                if index_p != -1:
+                    if is_up_p:
+                        ref_index = self.all_ub.index(index_p)
+                        gamma_p = mult * mu_temp
+                        gamma_p /= (zU[ref_index] + alpha_d*dzU[ref_index])
+                        gamma_p -= (Uvar[index_p] - x[index_p])
+                        gamma_p /= -(alpha_p*dx[index_p])
+                    else:
+                        ref_index = self.all_lb.index(index_p)
+                        gamma_p = mult * mu_temp
+                        gamma_p /= (zL[ref_index] + alpha_d*dzL[ref_index])
+                        gamma_p -= (x[index_p] - Lvar[index_p])
+                        gamma_p /= (alpha_p*dx[index_p])
+
+                    # If mu_temp is very small, gamma_p = 1. is possible due to
+                    # a cancellation error in the gamma_p calculation above.
+                    # Therefore, set a maximum value of alpha_p < 1 to prevent
+                    # division-by-zero errors later in the program.
+                    alpha_p *= min(max(1 - mult, gamma_p), 1. - 1.e-8)
+
+                # If alpha_d < 1.0, compute a gamma_d such that the
+                # complementarity of the updated (x,z) pair is mult*mu_temp
+                if index_d != -1:
+                    if is_up_d:
+                        ref_index = self.all_ub.index(index_d)
+                        gamma_d = mult * mu_temp
+                        gamma_d /= (Uvar[index_d] - x[index_d] - alpha_p*dx[index_d])
+                        gamma_d -= zU[ref_index]
+                        gamma_d /= (alpha_d*dzU[ref_index])
+                    else:
+                        ref_index = self.all_lb.index(index_d)
+                        gamma_d = mult * mu_temp
+                        gamma_d /= (x[index_d] + alpha_p*dx[index_d] - Lvar[index_d])
+                        gamma_d -= zL[ref_index]
+                        gamma_d /= (alpha_d*dzL[ref_index])
+
+                    # If mu_temp is very small, gamma_d = 1. is possible due to
+                    # a cancellation error in the gamma_d calculation above.
+                    # Therefore, set a maximum value of alpha_d < 1 to prevent
+                    # division-by-zero errors later in the program.
+                    alpha_d *= min(max(1 - mult, gamma_d), 1. - 1.e-8)
+
+        else:
+            # Use the standard fraction-to-the-boundary rule
+            alpha_p *= tau
+            alpha_d *= tau
+
+        return (alpha_p, alpha_d)
+
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
@@ -893,9 +898,10 @@ class RegQPInteriorPointSolver(object):
         nu = self.nu
 
         self.sys_size = n + p + m + nl + nu
+        size_hint = nl + nu + self.A.nnz + self.H.nnz + self.C.nnz
+        size_hint += self.sys_size
 
-        self.K = PysparseMatrix(size=self.sys_size,
-            sizeHint=nl + nu + self.A.nnz + self.H.nnz + self.C.nnz + self.sys_size,
+        self.K = PysparseMatrix(size=self.sys_size, sizeHint=size_hint,
             symmetric=True)
         self.K[:n, :n] = self.H
         self.K[n:n+p, :n] = self.C
@@ -1052,16 +1058,12 @@ class RegQPInteriorPointSolver(object):
         self.dFeas = Hx + self.c - y*self.A - r*self.C
         self.dFeas[self.all_lb] -= zL
         self.dFeas[self.all_ub] += zU
-        self.lComp = zL*(x[self.all_lb] - Lvar[self.all_lb])
-        self.uComp = zU*(Uvar[self.all_ub] - x[self.all_ub])
+
+        (self.mu, self.lComp, self.uComp) = self._check_complementarity(x, zL, zU)
 
         pFeasNorm = norm2(self.pFeas)
         dFeasNorm = norm2(self.dFeas)
         lsqNorm = norm2(self.lsqRes)
-        if (self.nl + self.nu) > 0:
-            self.mu = (self.lComp.sum() + self.uComp.sum()) / (self.nl + self.nu)
-        else:
-            self.mu = 0.0
 
         # Scaled residual norms and duality gap
         norm_sum = self.normA + self.normH + self.normC
@@ -1072,6 +1074,18 @@ class RegQPInteriorPointSolver(object):
 
         # Overall residual for stopping condition
         return max(self.pResid, self.lsqResid, self.dResid, self.dual_gap)
+
+    def _check_complementarity(self, x, zL, zU):
+        """Compute the complementarity given x, zL, and zU."""
+        lComp = zL*(x[self.all_lb] - self.qp.Lvar[self.all_lb])
+        uComp = zU*(self.qp.Uvar[self.all_ub] - x[self.all_ub])
+
+        if (self.nl + self.nu) > 0:
+            mu = (lComp.sum() + uComp.sum()) / (self.nl + self.nu)
+        else:
+            mu = 0.0
+
+        return (mu, lComp, uComp)
 
     def unscale(self):
         """Undo scaling operations, if any, to return QP to original state."""
