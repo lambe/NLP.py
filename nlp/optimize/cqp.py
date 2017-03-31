@@ -1293,3 +1293,642 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             zU /= u_minus_x
 
         return x,r,y,zL,zU
+
+
+class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
+    u"""Solve a QP with an L1 norm regularization of the variables.
+
+    Solve a convex quadratic program of the form::
+
+       minimize    q + cᵀx + ½ xᵀHx + λ||x||₁
+       subject to  Ax - b = 0                                  (L1QP)
+                   l ≤ x ≤ u
+
+    where Q is a symmetric positive semi-definite matrix. Any
+    quadratic program may be converted to the above form by instantiation
+    of the `SlackModel` class. The conversion to the slack formulation
+    is mandatory in this implementation.
+
+    Note that the L1 norm does not apply to the slack variables, if any.
+
+    For convenience, (L1QP) is transformed into the following form::
+
+       minimize    q + cᵀx + ½ xᵀHx + λeᵀv
+       subject to  Ax - b = 0                                  (L1QP2)
+                   l ≤ x ≤ u
+                  -v ≤ x ≤ v
+
+    where e is a vector of ones. The added variables v are appended to
+    the x vector in the solver code because they are treated similarly to
+    x. Likewise, additional lower- and upper-bound multipliers are appended
+    to those vectors in the original algorithm.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the problem, similar to the base solver."""
+        super(RegL1QPInteriorPointSolver,self).__init__(*args, **kwargs)
+
+        # Parameters specific to the L1 regularization
+        self.original_n = self.qp.model.n
+        self.lam = kwargs.get('lam',1.0)
+        return
+
+    def set_initial_guess(self):
+        u"""Compute initial guess according to Mehrotra's heuristic.
+
+        (finish documentation later)
+        """
+        nl = self.nl
+        nu = self.nu
+        on = self.original_n
+        n = self.n
+        Lvar = self.qp.Lvar
+        Uvar = self.qp.Uvar
+
+        self.log.debug('Computing initial guess')
+
+        # Let the class know we are initializing the problem for now
+        self.initial_guess = True
+
+        # Set up augmented system matrix
+        self.set_system_matrix()
+
+        # Analyze and factorize the matrix
+        self.LBL = LBLContext(self.K,
+            sqd=(self.primal_reg_min > 0.0 and self.dual_reg_min > 0.0))
+
+        # Assemble first right-hand side
+        self.set_system_rhs()
+
+        # Solve system and collect solution
+        self.solve_system()
+        x, _, _, _, _ = self.extract_xyz()
+
+        # Assemble second right-hand side
+        self.set_system_rhs(dual=True)
+
+        # Solve system and collect solution
+        self.solve_system()
+        _, r, y, zL, zU = self.extract_xyz()
+
+        # The following section is different for the L1 regularized problem.
+        # We need to shift the x variables to be feasible with respect to the
+        # bounds, and then shift the v variables to be feasible with respect
+        # to the update x variables
+
+        # Compute a strictly feasible starting point for the terms with fixed
+        # bounds
+        if nl > 0:
+            rL_guess = x[self.all_lb] - Lvar[self.all_lb]
+            zLx_guess = zL[:nl]
+
+            drL = 1.5 + max(0.0, -1.5*np.min(rL_guess))
+            dzLx = 1.5 + max(0.0, -1.5*np.min(zLx_guess))
+
+            rL_shift = drL + 0.5*np.dot(rL_guess + drL, zLx_guess + dzLx) / \
+                ((zLx_guess + dzLx).sum())
+            zLx_shift = dzLx + 0.5*np.dot(rL_guess + drL, zLx_guess + dzLx) / \
+                ((rL_guess + drL).sum())
+
+            rL = rL_guess + rL_shift
+            zL[:nl] = zLx_guess + zLx_shift
+            x[self.all_lb] = Lvar[self.all_lb] + rL
+
+        if nu > 0:
+            rU_guess = Uvar[self.all_ub] - x[self.all_ub]
+            zUx_guess = zU[:nu]
+
+            drU = 1.5 + max(0.0, -1.5*np.min(rU_guess))
+            dzUx = 1.5 + max(0.0, -1.5*np.min(zUx_guess))
+
+            rU_shift = drU + 0.5*np.dot(rU_guess + drU, zUx_guess + dzUx) / \
+                ((zUx_guess + dzUx).sum())
+            zUx_shift = dzU + 0.5*np.dot(rU_guess + drU, zUx_guess + dzUx) / \
+                ((rU_guess + drU).sum())
+
+            rU = rU_guess + rU_shift
+            zU[:nu] = zUx_guess + zUx_shift
+            x[self.all_ub] = Uvar[self.all_ub] - rU
+
+        # An additional normalization step for the range-bounded variables
+        #
+        # This normalization prevents the shift computed in rL and rU from
+        # taking us outside the feasible range, and yields the same final
+        # x value whether we take (Lvar + rL*norm) or (Uvar - rU*norm) as x
+        if nl > 0 and nu > 0:
+            intervals = Uvar[self.qp.rangeB] - Lvar[self.qp.rangeB]
+            norm_factors = intervals / (intervals + rL_shift + rU_shift)
+            x[self.qp.rangeB] = Lvar[self.qp.rangeB] + rL[self.range_in_lb]*norm_factors
+
+        # Now shift the variables for the L1 regularization term
+        sL_guess = x[n:] + x[:on]
+        sU_guess = x[n:] - x[:on]
+        zLv_guess = zL[nl:]
+        zUv_guess = zU[nu:]
+
+        dsL = 1.5 + max(0.0, -1.5*np.min(sL_guess))
+        dsU = 1.5 + max(0.0, -1.5*np.min(sU_guess))
+        dzLv = 1.5 + max(0.0, -1.5*np.min(zLv_guess))
+        dzUv = 1.5 + max(0.0, -1.5*np.min(zUv_guess))
+
+        sL_shift = dsL + 0.5*np.dot(sL_guess + dsL, zLv_guess + dzLv) / \
+            ((zLv_guess + dzLv).sum())
+        zLv_shift = dzLv + 0.5*np.dot(sL_guess + dsL, zLv_guess + dzLv) / \
+            ((sL_guess + dsL).sum())
+
+        sU_shift = dsU + 0.5*np.dot(sU_guess + dsU, zUv_guess + dzUv) / \
+            ((zUv_guess + dzUv).sum())
+        zUv_shift = dzUv + 0.5*np.dot(sU_guess + dsU, zUv_guess + dzUv) / \
+            ((sU_guess + dsU).sum())
+
+        sL = sL_guess + sL_shift
+        sU = sU_guess + sU_shift
+        zL[nl:] = zLv_guess + zLv_shift
+        zU[nu:] = zUv_guess + zUv_shift
+        x[n:] = np.maximum(sL - x[:on], sU + x[:on])
+
+        # Initialization complete
+        self.initial_guess = False
+
+        # Check strict feasibility
+        if not np.all(x[:n] > Lvar) or not np.all(x[:n] < Uvar) or \
+        not np.all(zL > 0) or not np.all(zU > 0) or \
+        not np.all(x[n:] > np.abs(x[:on])):
+            raise ValueError('Initial point not strictly feasible')
+
+        return (x, r, y, zL, zU)
+
+    def max_primal_step_length(self, dx):
+        """Compute the maximum step to the boundary in the primal variables.
+
+        The function also returns the component index that produces the
+        minimum steplength. (If the minimum steplength is 1, this value is
+        set to -1.)
+
+        For the L1 regularized problem, we need to account for the case
+        where v becomes too small too quickly.
+        """
+        self.log.debug('Computing primal step length')
+        xl = self.x[self.all_lb]
+        xu = self.x[self.all_ub]
+        v = self.x[self.n:]
+        dxl = dx[self.all_lb]
+        dxu = dx[self.all_ub]
+        dv = dx[self.n:]
+        l = self.qp.Lvar[self.all_lb]
+        u = self.qp.Uvar[self.all_ub]
+        on = self.original_n
+        eps = 1.e-20
+
+        if self.nl == 0:
+            alphaL_max = 1.0
+        else:
+            # If dxl == 0., shift it slightly to prevent division by zero
+            dxl_mod = np.where(dxl == 0., eps, dxl)
+            alphaL = np.where(dxl < 0, -(xl - l)/dxl_mod, 1.)
+            alphaL_max = min(1.0, alphaL.min())
+
+        if self.nu == 0:
+            alphaU_max = 1.0
+        else:
+            # If dxu == 0., shift it slightly to prevent division by zero
+            dxu_mod = np.where(dxu == 0., -eps, dxu)
+            alphaU = np.where(dxu > 0, (u - xu)/dxu_mod, 1.)
+            alphaU_max = min(1.0, alphaU.min())
+
+        # Additional work to account for added variables
+        dv_mod = np.where(dv == 0., eps, dv)
+        temp_a_max = min(alphaL_max, alphaU_max)
+        temp_x = self.x[:on] + temp_a_max*dx[:on]
+        temp_v = v + temp_a_max*dv_mod
+
+        alpha_vL = np.where(temp_v + temp_x < 0., -(v + self.x[:on])/(dv_mod + dx[:on]), 1.)
+        alpha_vU = np.where(temp_v - temp_x < 0., -(v - self.x[:on])/(dv_mod - dx[:on]), 1.)
+
+        alpha_vL_max = min(1.0, alpha_vL.min())
+        alpha_vU_max = min(1.0, alpha_vU.min())
+
+        min_alpha_limit = min(alphaL_max,alphaU_max,alpha_vL_max,alpha_vU_max)
+
+        if min_alpha_limit == 1.0:
+            return (1.0, -1, False)
+
+        if min_alpha_limit == alphaL_max:
+            alpha_max = alphaL_max
+            ind_max = self.all_lb[np.argmin(alphaL)]
+            is_upper = False
+        elif min_alpha_limit == alphaU_max:
+            alpha_max = alphaU_max
+            ind_max = self.all_ub[np.argmin(alphaU)]
+            is_upper = True
+        elif min_alpha_limit == alpha_vL_max:
+            alpha_max = alpha_vL_max
+            ind_max = self.n + np.argmin(alpha_vL)
+            is_upper = False
+        else:
+            alpha_max = alpha_vU_max
+            ind_max = self.n + np.argmin(alpha_vU)
+            is_upper = True
+
+        return (alpha_max, ind_max, is_upper)
+
+    def max_dual_step_length(self, dzL, dzU):
+        """Compute the maximum step to the boundary in the dual variables.
+
+        This function is similar to the base class except for the case where
+        the step length is restricted by the added variables.
+        """
+        self.log.debug('Computing dual step length')
+        eps = 1.e-20
+
+        # No if-blocks on bounds since we always have at least one regularized
+        # variable
+
+        # If dzL == 0., shift it slightly to prevent division by zero
+        dzL_mod = np.where(dzL == 0., eps, dzL)
+        alphaL = np.where(dzL < 0, -self.zL/dzL_mod, 1.)
+        alphaL_max = min(1.0,alphaL.min())
+
+        # If dzU == 0., shift it slightly to prevent division by zero
+        dzU_mod = np.where(dzU == 0., -eps, dzU)
+        alphaU = np.where(dzU < 0, -self.zU/dzU_mod, 1.)
+        alphaU_max = min(1.0,alphaU.min())
+
+        if min(alphaL_max,alphaU_max) == 1.0:
+            return (1.0, -1, False)
+
+        if alphaL_max < alphaU_max:
+            alpha_max = alphaL_max
+            arg = np.argmin(alphaL)
+            if arg >= self.nl:
+                ind_max = self.n + arg - self.nl
+            else:
+                ind_max = self.all_lb[arg]
+            is_upper = False
+        else:
+            alpha_max = alphaU_max
+            arg = np.argmin(alphaU)
+            if arg >= self.nu:
+                ind_max = self.n + arg - self.nu
+            else:
+                ind_max = self.all_ub[arg]
+            is_upper = True
+
+        return (alpha_max, ind_max, is_upper)
+
+    def _compute_max_steps(self, dx, dzL, dzU):
+        """Compute the maximum step lengths given the directions."""
+
+        x = self.x
+        zL = self.zL
+        zU = self.zU
+        Uvar = self.qp.Uvar
+        Lvar = self.qp.Lvar
+
+        # Compute largest allowed primal and dual stepsizes.
+        (alpha_p, index_p, is_up_p) = self.max_primal_step_length(dx)
+        (alpha_d, index_d, is_up_d) = self.max_dual_step_length(dzL, dzU)
+
+        # Define fraction-to-the-boundary factor and compute the true
+        # step sizes
+        tau = max(.995, 1.0 - self.mu)
+
+        if self.mehrotra_pc:
+            # Compute actual stepsize using Mehrotra's heuristic.
+
+            if index_p == index_d and is_up_p == is_up_d:
+                # If both are -1, do nothing, since the step remains
+                # strictly feasible and alpha_p = alpha_d = 1; otherwise,
+                # there is a division by zero in Mehrotra's heuristic, so
+                # we fall back on the standard fraction-to-boundary rule.
+                if index_p != -1:
+                    alpha_p *= tau
+                    alpha_d *= tau
+            else:
+                mult = 0.01
+
+                (mu_temp, _, _) = self._check_complementarity(x + alpha_p*dx,
+                    zL + alpha_d*dzL, zU + alpha_d*dzU)
+
+                # If alpha_p < 1.0, compute a gamma_p such that the
+                # complementarity of the updated (x,z) pair is mult*mu_temp
+                if index_p != -1:
+                    if is_up_p:
+                        if index_p < self.n:
+                            ref_index = self.all_ub.index(index_p)
+                            gamma_p = mult * mu_temp
+                            gamma_p /= (zU[ref_index] + alpha_d*dzU[ref_index])
+                            gamma_p -= (Uvar[index_p] - x[index_p])
+                            gamma_p /= -(alpha_p*dx[index_p])
+                        else:
+                            ref_index = self.nu + (index_p - self.n)
+                            gamma_p = mult * mu_temp
+                            gamma_p /= (zU[ref_index] + alpha_d*dzU[ref_index])
+                            gamma_p -= (x[index_p] - x[index_p - self.n])
+                            gamma_p /= alpha_p*(dx[index_p] - dx[index_p - self.n])
+                    else:
+                        if index_p < self.n:
+                            ref_index = self.all_lb.index(index_p)
+                            gamma_p = mult * mu_temp
+                            gamma_p /= (zL[ref_index] + alpha_d*dzL[ref_index])
+                            gamma_p -= (x[index_p] - Lvar[index_p])
+                            gamma_p /= (alpha_p*dx[index_p])
+                        else:
+                            ref_index = self.nl + (index_p - self.n)
+                            gamma_p = mult * mu_temp
+                            gamma_p /= (zL[ref_index] + alpha_d*dzL[ref_index])
+                            gamma_p -= (x[index_p] + x[index_p - self.n])
+                            gamma_p /= alpha_p*(dx[index_p] + dx[index_p - self.n])
+
+                    # If mu_temp is very small, gamma_p = 1. is possible due to
+                    # a cancellation error in the gamma_p calculation above.
+                    # Therefore, set a maximum value of alpha_p < 1 to prevent
+                    # division-by-zero errors later in the program.
+                    alpha_p *= min(max(1 - mult, gamma_p), 1. - 1.e-8)
+
+                # If alpha_d < 1.0, compute a gamma_d such that the
+                # complementarity of the updated (x,z) pair is mult*mu_temp
+                if index_d != -1:
+                    if is_up_d:
+                        if index_d < self.n:
+                            ref_index = self.all_ub.index(index_d)
+                            gamma_d = mult * mu_temp
+                            gamma_d /= (Uvar[index_d] - x[index_d] - alpha_p*dx[index_d])
+                            gamma_d -= zU[ref_index]
+                            gamma_d /= (alpha_d*dzU[ref_index])
+                        else:
+                            ref_index = self.nu + (index_d - self.n)
+                            gamma_d = mult * mu_temp
+                            gamma_d /= (x[index_d] - x[index_d - self.n] + alpha_p*(dx[index_d] - dx[index_d - self.n]))
+                            gamma_d -= zU[ref_index]
+                            gamma_d /= (alpha_d*dzU[ref_index])
+                    else:
+                        if index_d < self.n:
+                            ref_index = self.all_lb.index(index_d)
+                            gamma_d = mult * mu_temp
+                            gamma_d /= (x[index_d] + alpha_p*dx[index_d] - Lvar[index_d])
+                            gamma_d -= zL[ref_index]
+                            gamma_d /= (alpha_d*dzL[ref_index])
+                        else:
+                            ref_index = self.nl + (index_d - self.n)
+                            gamma_d = mult * mu_temp
+                            gamma_d /= (x[index_d] + x[index_d - self.n] + alpha_p*(dx[index_d] + dx[index_d - self.n]))
+                            gamma_d -= zL[ref_index]
+                            gamma_d /= (alpha_d*dzL[ref_index])
+
+                    # If mu_temp is very small, gamma_d = 1. is possible due to
+                    # a cancellation error in the gamma_d calculation above.
+                    # Therefore, set a maximum value of alpha_d < 1 to prevent
+                    # division-by-zero errors later in the program.
+                    alpha_d *= min(max(1 - mult, gamma_d), 1. - 1.e-8)
+
+        else:
+            # Use the standard fraction-to-the-boundary rule
+            alpha_p *= tau
+            alpha_d *= tau
+
+        return (alpha_p, alpha_d)
+
+    def initialize_system(self):
+        """Initialize the system matrix and right-hand side.
+
+        The A and H blocks of the matrix are also put in place since they
+        are common to all problems. (The C block is also included for least-
+        squares problems.)
+        """
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        self.sys_size = n + on + p + m + nl + on + nu + on
+        size_hint = nl + nu + 4*on + self.A.nnz + self.H.nnz + self.C.nnz
+        size_hint += self.sys_size
+
+        self.K = PysparseMatrix(size=self.sys_size, sizeHint=size_hint,
+            symmetric=True)
+        self.K[:n, :n] = self.H
+        self.K[n+on:n+on+p, :n] = self.C
+        self.K[n+on+p:n+on+p+m, :n] = self.A
+
+        self.K.put(-1.0, range(n+on, n+on+p))
+
+        self.rhs = np.zeros(self.sys_size)
+        return
+
+    def set_system_matrix(self):
+        """Set up the linear system matrix."""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        # Convenience index
+        z_start = n+on+p+m
+
+        if self.initial_guess:
+            self.log.debug('Setting up matrix for initial guess')
+
+            self.K.put(self.diagH + self.primal_reg_min**0.5, range(n))
+            self.K.put(self.primal_reg_min**0.5, range(n,n+on))
+            self.K.put(-self.dual_reg_min**0.5, range(n+on+p,z_start))
+
+            self.K.put(-1.0, range(z_start, self.sys_size))
+            self.K.put(1.0, range(z_start, z_start+nl), self.all_lb)
+            self.K.put(1.0, range(z_start+nl, z_start+nl+on), range(on))
+            self.K.put(1.0, range(z_start+nl, z_start+nl+on), range(n,n+on))
+
+            self.K.put(1.0, range(z_start+nl+on, z_start+nl+on+nu), self.all_ub)
+            self.K.put(1.0, range(z_start+nl+on+nu, self.sys_size), range(on))
+            self.K.put(-1.0, range(z_start+nl+on+nu, self.sys_size), range(n,n+on))
+
+        else:
+            self.log.debug('Setting up matrix for current iteration')
+            Lvar = self.qp.Lvar
+            Uvar = self.qp.Uvar
+            x = self.x
+            zL = self.zL
+            zU = self.zU
+
+            # Main diagonal terms
+            self.K.put(self.diagH + self.primal_reg, range(n))
+            self.K.put(self.primal_reg, range(n,n+on))
+            self.K.put(-self.dual_reg, range(n+on+p,z_start))
+
+            self.K.put(Lvar[self.all_lb] - x[self.all_lb], range(z_start, z_start+nl))
+            self.K.put(-x[:on] - x[n:], range(z_start+nl, z_start+nl+on))
+            self.K.put(x[self.all_ub] - Uvar[self.all_ub], range(z_start+nl+on, z_start+nl+on+nu))
+            self.K.put(x[:on] - x[n:], range(z_start+nl+on+nu, self.sys_size))
+
+            # Bound multiplier blocks
+            self.K.put(zL[:nl]**0.5, range(z_start, z_start+nl), self.all_lb)
+            self.K.put(zL[nl:]**0.5, range(z_start+nl, z_start+nl+on), range(on))
+            self.K.put(zL[nl:]**0.5, range(z_start+nl, z_start+nl+on), range(n,n+on))
+
+            self.K.put(zU[:nu]**0.5, range(z_start+nl+on, z_start+nl+on+nu), self.all_ub)
+            self.K.put(zU[nu:]**0.5, range(z_start+nl+on+nu, self.sys_size), range(on))
+            self.K.put(-zU[nu:]**0.5, range(z_start+nl+on+nu, self.sys_size), range(n,n+on))
+
+        return
+
+    def update_system_matrix(self):
+        """Update the linear system matrix with the new regularization
+        parameters. This is a helper method when checking the system for
+        degeneracy."""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        self.log.debug('Updating matrix')
+        self.K.put(self.diagH + self.primal_reg, range(n))
+        self.K.put(self.primal_reg, range(n,n+on))
+        self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+        return
+
+    def set_system_rhs(self, **kwargs):
+        """Set up the linear system right-hand side."""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+        self.log.debug('Setting up linear system right-hand side')
+
+        # Convenience index
+        z_start = n+on+p+m
+
+        if self.initial_guess:
+            self.rhs[z_start:z_start+nl] = self.qp.Lvar[self.all_lb]
+            self.rhs[z_start+nl+on:z_start+nl+on+nu] = self.qp.Uvar[self.all_ub]
+            if not kwargs.get('dual',False):
+                # Primal initial point RHS
+                self.rhs[:n] = 0.
+                self.rhs[n:n+on] = 0.
+                self.rhs[n+on:n+on+p] = self.d
+                self.rhs[n+on+p:z_start] = self.b
+            else:
+                # Dual initial point RHS
+                self.rhs[:n] = -self.c
+                self.rhs[n:on] = -self.lam
+                self.rhs[n+on:n+on+p] = self.d
+                self.rhs[n+on+p:z_start] = 0.
+        else:
+            sigma = kwargs.get('sigma',0.0)
+            self.rhs[:n+on] = -self.dFeas
+            self.rhs[n+on:n+on+p] = -self.lsqRes
+            self.rhs[n+on+p:z_start] = -self.pFeas
+            self.rhs[z_start:z_start+nl+on] = -self.lComp + sigma*self.mu
+            self.rhs[z_start:z_start+nl+on] *= self.zL**-0.5
+            self.rhs[z_start+nl+on:] = self.uComp - sigma*self.mu
+            self.rhs[z_start+nl+on:] *= self.zU**-0.5
+
+        return
+
+    def extract_xyz(self, **kwargs):
+        """Return the partitioned solution vector"""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        z_start = n+on+p+m
+
+        x = self.LBL.x[:n+on].copy()
+        r = -self.LBL.x[n+on:n+on+p].copy()
+        y = -self.LBL.x[n+on+p:n+on+p+m].copy()
+        if self.initial_guess:
+            zL = -self.LBL.x[z_start:z_start+nl+on].copy()
+            zU = self.LBL.x[z_start+nl+on:].copy()
+        else:
+            zL = -(self.zL**0.5)*self.LBL.x[z_start:z_start+nl+on].copy()
+            zU = (self.zU**0.5)*self.LBL.x[z_start+nl+on:].copy()
+
+        return x,r,y,zL,zU
+
+    def check_optimality(self):
+        u"""Compute feasibility and complementarity for the current point.
+
+        For the L1 regularized problem, dual feasibility includes the special
+        bound multiplier constraints
+
+            λe - zᴸ - zᵁ = 0
+
+        where zᴸ and zᵁ are multipliers associated with x ≥ -v and x ≤ v
+        respectively.
+        """
+        x = self.x
+        r = self.r
+        y = self.y
+        zL = self.zL
+        zU = self.zU
+        Lvar = self.qp.Lvar
+        Uvar = self.qp.Uvar
+
+        n = self.n
+        on = self.original_n
+        nl = self.nl
+        nu = self.nu
+
+        x_n = x[:n]
+        v = x[n:]
+
+        # Residual and complementarity vectors
+        Hx = self.H*x_n
+        self.qpObj = self.q + np.dot(self.c,x_n) + 0.5*np.dot(x_n,Hx)
+        self.qpObj += 0.5*np.dot(r,r) + self.lam*v.sum()
+
+        self.pFeas = self.A*x_n - self.b
+
+        if self.use_lsq:
+            self.lsqRes = self.C*x_n + r - self.d
+        else:
+            self.lsqRes = np.zeros(0, dtype=np.float)
+
+        self.dFeas = np.zeros(n+on, dtype=np.float)
+        self.dFeas[:n] = Hx + self.c - y*self.A - r*self.C
+        self.dFeas[self.all_lb] -= zL[:nl]
+        self.dFeas[self.all_ub] += zU[:nu]
+        self.dFeas[:on] -= zL[nl:]
+        self.dFeas[:on] += zU[nu:]
+        self.dFeas[n:] = self.lam - zL[nl:] - zU[nu:]
+
+        (self.mu, self.lComp, self.uComp) = self._check_complementarity(x, zL, zU)
+
+        pFeasNorm = norm2(self.pFeas)
+        dFeasNorm = norm2(self.dFeas)
+        lsqNorm = norm2(self.lsqRes)
+
+        # Scaled residual norms and duality gap
+        norm_sum = self.normA + self.normH + self.normC
+        self.pResid = pFeasNorm / (1 + self.normb + norm_sum)
+        self.dResid = dFeasNorm / (1 + self.normc + norm_sum)
+        self.lsqResid = lsqNorm / (1 + self.normd + norm_sum)
+        self.dual_gap = self.mu / (1 + abs(np.dot(self.c,x_n)) + norm_sum)
+
+        # Overall residual for stopping condition
+        return max(self.pResid, self.lsqResid, self.dResid, self.dual_gap)
+
+    def _check_complementarity(self, x, zL, zU):
+        """Compute the complementarity given x, zL, and zU."""
+        nl = self.nl
+        nu = self.nu
+        on = self.original_n
+        n = self.n
+
+        lComp = np.zeros(nl+on, dtype=np.float)
+        lComp[:nl] = zL[:nl]*(x[self.all_lb] - self.qp.Lvar[self.all_lb])
+        lComp[nl:] = zL[nl:]*(x[n:] + x[:on])
+
+        uComp = np.zeros(nu+on, dtype=np.float)
+        uComp[:nu] = zU[:nu]*(self.qp.Uvar[self.all_ub] - x[self.all_ub])
+        uComp[nu:] = zU[nu:]*(x[n:] - x[:on])
+
+        # No if block because we always have at least one v variable
+        mu = (lComp.sum() + uComp.sum()) / (nl + nu + 2*on)
+
+        return (mu, lComp, uComp)
