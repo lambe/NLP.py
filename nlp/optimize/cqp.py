@@ -1214,7 +1214,7 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             new_diag[self.all_ub] += self.zU / u_minus_x
 
             self.K.put(new_diag, range(n))
-            self.K.put(-self.dual_reg_min**0.5, range(n+p,n+p+m))
+            self.K.put(-self.dual_reg, range(n+p,n+p+m))
 
         return
 
@@ -1222,6 +1222,7 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         """Update the linear system matrix with the new regularization
         parameters. This is a helper method when checking the system for
         degeneracy."""
+
         self.log.debug('Updating matrix')
         x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
         u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
@@ -1814,7 +1815,7 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
             else:
                 # Dual initial point RHS
                 self.rhs[:n] = -self.c
-                self.rhs[n:on] = -self.lam
+                self.rhs[n:n+on] = -self.lam
                 self.rhs[n+on:n+on+p] = self.d
                 self.rhs[n+on+p:z_start] = 0.
         else:
