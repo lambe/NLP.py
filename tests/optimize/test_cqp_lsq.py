@@ -11,7 +11,7 @@ The problem has no constraints.
 from nlp.model.qpmodel import LSQModel
 from pysparse.sparse import PysparseMatrix
 from nlp.optimize.cqp import RegQPInteriorPointSolver, RegQPInteriorPointSolver2x2
-from nlp.optimize.cqp import RegL1QPInteriorPointSolver
+from nlp.optimize.cqp import RegL1QPInteriorPointSolver, RegL1QPInteriorPointSolver2x2
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
@@ -37,7 +37,9 @@ prob = LSQModel(name='LLS_1',fromOps=(c,H,None),lsqOps=(d,C),
 	nnzc=n*p)
 
 solver = RegQPInteriorPointSolver(prob)
+# solver = RegQPInteriorPointSolver2x2(prob)
 # solver = RegL1QPInteriorPointSolver(prob, lam=1.0)
+# solver = RegL1QPInteriorPointSolver2x2(prob, lam=1.0)
 solver.solve()
 
 print solver.status

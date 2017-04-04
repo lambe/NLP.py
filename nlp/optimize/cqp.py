@@ -1933,3 +1933,219 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         mu = (lComp.sum() + uComp.sum()) / (nl + nu + 2*on)
 
         return (mu, lComp, uComp)
+
+
+class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
+    """A 2x2 block variant of the L1 regularized interior-point method.
+
+    Linear system is based on the (reduced) 2x2 block system instead of
+    the 3x3 block system.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the problem, similar to the base solver."""
+        super(RegL1QPInteriorPointSolver2x2,self).__init__(*args, **kwargs)
+
+    def initialize_system(self):
+        """Initialize the system matrix and right-hand side.
+
+        The A and H blocks of the matrix are also put in place since they
+        are common to all problems. (The C block is also included for least-
+        squares problems.)
+        """
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+
+        self.sys_size = n + on + p + m
+        size_hint = self.A.nnz + self.H.nnz + self.C.nnz + on + self.sys_size
+
+        self.K = PysparseMatrix(size=self.sys_size, sizeHint=size_hint,
+            symmetric=True)
+        self.K[:n, :n] = self.H
+        self.K[n+on:n+on+p, :n] = self.C
+        self.K[n+on+p:n+on+p+m, :n] = self.A
+
+        self.K.put(-1.0, range(n+on, n+on+p))
+
+        self.rhs = np.zeros(self.sys_size)
+        return
+
+    def set_system_matrix(self):
+        """Set up the linear system matrix."""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        if self.initial_guess:
+            self.log.debug('Setting up matrix for initial guess')
+
+            new_diag = self.diagH + self.primal_reg_min**0.5
+            new_diag[self.all_lb] += 1.0
+            new_diag[self.all_ub] += 1.0
+            new_diag[:on] += 2.0
+
+            new_diag_2 = self.primal_reg_min**0.5 * np.ones(on, dtype=np.float)
+            new_diag_2 += 2.0
+
+            # Use an epsilon-value in these positions to identify them as stored
+            # in the sparse matrix. Otherwise, the symbolic factorization will
+            # be incorrect in the main loop
+            off_diag = 1.e-20 * np.ones(on, dtype=np.float)
+
+            self.K.put(new_diag, range(n))
+            self.K.put(new_diag_2, range(n,n+on))
+            self.K.put(off_diag, range(n,n+on), range(on))
+            self.K.put(-self.dual_reg_min**0.5, range(n+on+p,n+on+p+m))
+
+        else:
+            self.log.debug('Setting up matrix for current iteration')
+
+            x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
+            u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
+            v_plus_x = self.x[n:] + self.x[:on]
+            v_minus_x = self.x[n:] - self.x[:on]
+
+            new_diag = self.diagH + self.primal_reg
+            new_diag[self.all_lb] += self.zL[:nl] / x_minus_l
+            new_diag[self.all_ub] += self.zU[:nu] / u_minus_x
+            new_diag[:on] += self.zL[nl:] / v_plus_x
+            new_diag[:on] += self.zU[nu:] / v_minus_x
+
+            new_diag_2 = self.primal_reg * np.ones(on, dtype=np.float)
+            new_diag_2 += self.zL[nl:] / v_plus_x
+            new_diag_2 += self.zU[nu:] / v_minus_x
+
+            off_diag = (self.zL[nl:] / v_plus_x) - (self.zU[nu:] / v_minus_x)
+
+            self.K.put(new_diag, range(n))
+            self.K.put(new_diag_2, range(n,n+on))
+            self.K.put(off_diag, range(n,n+on), range(on))
+            self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+
+        return
+
+    def update_system_matrix(self):
+        """Update the linear system matrix with the new regularization
+        parameters. This is a helper method when checking the system for
+        degeneracy."""
+
+        self.log.debug('Updating matrix')
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
+        u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
+        v_plus_x = self.x[n:] + self.x[:on]
+        v_minus_x = self.x[n:] - self.x[:on]
+
+        new_diag = self.diagH + self.primal_reg
+        new_diag[self.all_lb] += self.zL[:nl] / x_minus_l
+        new_diag[self.all_ub] += self.zU[:nu] / u_minus_x
+        new_diag[:on] += self.zL[nl:] / v_plus_x
+        new_diag[:on] += self.zU[nu:] / v_minus_x
+
+        new_diag_2 = self.primal_reg * np.ones(on, dtype=np.float)
+        new_diag_2 += self.zL[nl:] / v_plus_x
+        new_diag_2 += self.zU[nu:] / v_minus_x
+
+        self.K.put(new_diag, range(n))
+        self.K.put(new_diag_2, range(n,n+on))
+        self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+
+        return
+
+    def set_system_rhs(self, **kwargs):
+        """Set up the linear system right-hand side."""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+        self.log.debug('Setting up linear system right-hand side')
+
+        if self.initial_guess:
+            self.rhs[:n] = 0.
+            self.rhs[self.all_lb] += self.qp.Lvar[self.all_lb]
+            self.rhs[self.all_ub] += self.qp.Uvar[self.all_ub]
+            if not kwargs.get('dual',False):
+                # Primal initial point RHS
+                self.rhs[n:n+on] = 0.
+                self.rhs[n+on:n+on+p] = self.d
+                self.rhs[n+on+p:n+on+p+m] = self.b
+            else:
+                # Dual initial point RHS
+                self.rhs[:n] -= self.c
+                self.rhs[n:n+on] = -self.lam
+                self.rhs[n+on:n+on+p] = self.d
+                self.rhs[n+on+p:n+on+p+m] = 0.
+
+        else:
+            sigma = kwargs.get('sigma',0.0)
+            x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
+            u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
+            v_plus_x = self.x[n:] + self.x[:on]
+            v_minus_x = self.x[n:] - self.x[:on]
+
+            self.rhs[:n+on] = -self.dFeas
+            self.rhs[n+on:n+on+p] = -self.lsqRes
+            self.rhs[n+on+p:n+on+p+m] = -self.pFeas
+
+            self.rhs[self.all_lb] += -self.zL[:nl] + sigma*self.mu/x_minus_l
+            self.rhs[self.all_ub] += self.zU[:nu] - sigma*self.mu/u_minus_x
+            self.rhs[:on] += -self.zL[nl:] + sigma*self.mu/v_plus_x
+            self.rhs[:on] += self.zU[nu:] - sigma*self.mu/v_minus_x
+
+            self.rhs[n:n+on] += -self.zL[nl:] + sigma*self.mu/v_plus_x
+            self.rhs[n:n+on] += -self.zU[nu:] + sigma*self.mu/v_minus_x
+
+        return
+
+    def extract_xyz(self, **kwargs):
+        """Return the partitioned solution vector"""
+        n = self.n
+        on = self.original_n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        x = self.LBL.x[:n+on].copy()
+        r = -self.LBL.x[n+on:n+on+p].copy()
+        y = -self.LBL.x[n+on+p:n+on+p+m].copy()
+        zL = np.zeros(nl+on, dtype=np.float)
+        zU = np.zeros(nu+on, dtype=np.float)
+
+        if self.initial_guess:
+            zL[:nl] = self.qp.Lvar[self.all_lb] - x[self.all_lb]
+            zL[nl:] = -(x[n:] + x[:on])
+            zU[:nu] = x[self.all_ub] - self.qp.Uvar[self.all_ub]
+            zU[nu:] = -(x[n:] - x[:on])
+
+        else:
+            sigma = kwargs.get('sigma',0.0)
+            x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
+            u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
+            v_plus_x = self.x[n:] + self.x[:on]
+            v_minus_x = self.x[n:] - self.x[:on]
+
+            zL[:nl] = (-self.zL[:nl]*(x_minus_l + x[self.all_lb]) + sigma*self.mu)
+            zL[:nl] /= x_minus_l
+            zL[nl:] = (-self.zL[nl:]*(v_plus_x + x[:on] + x[n:]) + sigma*self.mu)
+            zL[nl:] /= v_plus_x
+
+            zU[:nu] = (-self.zU[:nu]*(u_minus_x - x[self.all_ub]) + sigma*self.mu)
+            zU[:nu] /= u_minus_x
+            zU[nu:] = (-self.zU[nu:]*(v_minus_x - x[:on] + x[n:]) + sigma*self.mu)
+            zU[nu:] /= v_minus_x
+
+        return x,r,y,zL,zU
