@@ -13,6 +13,9 @@ try:                            # To solve augmented systems
 except ImportError:
     from hsl.solvers.pyma27 import PyMa27Solver as LBLContext
 from hsl.scaling.mc29 import mc29ad
+
+from qr_mumps.solver import QRMUMPSSolver
+
 from nlp.model.qpmodel import QPModel, LSQModel
 from nlp.model.snlp import SlackModel
 from pysparse.sparse import PysparseMatrix
@@ -177,8 +180,8 @@ class RegQPInteriorPointSolver(object):
         self.diagH = self.H.take(range(self.n))
 
         # We perform the analyze phase on the augmented system only once.
-        # self.LBL will be initialized in solve().
-        self.LBL = None
+        # self.lin_solver will be initialized in solve().
+        self.lin_solver = None
 
         # Set regularization parameters.
         self.primal_reg_init = kwargs.get('primal_reg_init', 1.0)
@@ -447,21 +450,9 @@ class RegQPInteriorPointSolver(object):
             # Compute augmented matrix and factorize it, checking for
             # degeneracy along the way
             self.set_system_matrix()
-            self.LBL.factorize(self.K)
-
-            if not self.LBL.isFullRank:
-                nbump = 0
-                while not self.LBL.isFullRank and nbump < self.bump_max:
-                    self.log.debug('Primal-Dual Matrix Rank Deficient' +
-                                      '... bumping up reg parameters')
-                    nbump += 1
-                    self.primal_reg *= 100
-                    self.dual_reg *= 100
-                    self.update_system_matrix()
-                    self.LBL.factorize(self.K)
 
             # Exit immediately if regularization is unsuccessful.
-            if not self.LBL.isFullRank:
+            if not self.check_degeneracy():
                 self.log.debug('Unable to regularize sufficiently. Exiting')
                 break
 
@@ -646,8 +637,7 @@ class RegQPInteriorPointSolver(object):
         self.set_system_matrix()
 
         # Analyze and factorize the matrix
-        self.LBL = LBLContext(self.K,
-            sqd=(self.primal_reg_min > 0.0 and self.dual_reg_min > 0.0))
+        self.initialize_linear_solver()
 
         # Assemble first right-hand side
         self.set_system_rhs()
@@ -661,7 +651,7 @@ class RegQPInteriorPointSolver(object):
 
         # Solve system and collect solution
         self.solve_system()
-        _, r, y, zL_guess, zU_guess = self.extract_xyz()
+        _, r, y, zL_guess, zU_guess = self.extract_xyz(dual=True)
 
         # Use Mehrotra's heuristic to compute a strictly feasible starting
         # point for all x and z
@@ -912,6 +902,12 @@ class RegQPInteriorPointSolver(object):
         self.rhs = np.zeros(self.sys_size)
         return
 
+    def initialize_linear_solver(self):
+        """Set up the linear solver, given the constructed matrix."""
+        self.lin_solver = LBLContext(self.K,
+            sqd=(self.primal_reg_min > 0.0 and self.dual_reg_min > 0.0))
+        return
+
     def set_system_matrix(self):
         """Set up the linear system matrix."""
         n = self.n
@@ -947,6 +943,23 @@ class RegQPInteriorPointSolver(object):
             self.K.put(zU**0.5, range(n+p+m+nl, n+p+m+nl+nu), self.all_ub)
 
         return
+
+    def check_degeneracy(self):
+        """Return True if the system can be sufficiently regularized for
+        LDL factorization and False otherwise."""
+        self.lin_solver.factorize(self.K)
+        if not self.lin_solver.isFullRank:
+            nbump = 0
+            while not self.lin_solver.isFullRank and nbump < self.bump_max:
+                self.log.debug('Primal-Dual Matrix Rank Deficient' +
+                                  '... bumping up reg parameters')
+                nbump += 1
+                self.primal_reg *= 100
+                self.dual_reg *= 100
+                self.update_system_matrix()
+                self.lin_solver.factorize(self.K)
+
+        return self.lin_solver.isFullRank
 
     def update_system_matrix(self):
         """Update the linear system matrix with the new regularization
@@ -999,16 +1012,16 @@ class RegQPInteriorPointSolver(object):
         The solution may be iteratively refined based on solver options
         self.itref_threshold and self.nitref.
 
-        The self.LBL object contains all of the solution data.
+        The self.lin_solver object contains all of the solution data.
         """
         self.log.debug('Solving linear system')
-        self.LBL.solve(self.rhs)
-        self.LBL.refine(self.rhs, tol=self.itref_threshold, nitref=self.nitref)
+        self.lin_solver.solve(self.rhs)
+        self.lin_solver.refine(self.rhs, tol=self.itref_threshold, nitref=self.nitref)
 
         # Estimate matrix l2-norm condition number.
         if self.estimate_cond:
             rhsNorm = norm2(rhs)
-            solnNorm = norm2(self.LBL.x)
+            solnNorm = norm2(self.lin_solver.x)
             Kop = PysparseLinearOperator(self.K, symmetric=True)
             normK, _ = normest(Kop, tol=1.0e-3)
             if rhsNorm > 0 and solnNorm > 0:
@@ -1025,15 +1038,15 @@ class RegQPInteriorPointSolver(object):
         p = self.p
         nl = self.nl
 
-        x = self.LBL.x[:n].copy()
-        r = -self.LBL.x[n:n+p].copy()
-        y = -self.LBL.x[n+p:n+p+m].copy()
+        x = self.lin_solver.x[:n].copy()
+        r = -self.lin_solver.x[n:n+p].copy()
+        y = -self.lin_solver.x[n+p:n+p+m].copy()
         if self.initial_guess:
-            zL = -self.LBL.x[n+p+m:n+p+m+nl].copy()
-            zU = self.LBL.x[n+p+m+nl:].copy()
+            zL = -self.lin_solver.x[n+p+m:n+p+m+nl].copy()
+            zU = self.lin_solver.x[n+p+m+nl:].copy()
         else:
-            zL = -(self.zL**0.5)*self.LBL.x[n+p+m:n+p+m+nl].copy()
-            zU = (self.zU**0.5)*self.LBL.x[n+p+m+nl:].copy()
+            zL = -(self.zL**0.5)*self.lin_solver.x[n+p+m:n+p+m+nl].copy()
+            zU = (self.zU**0.5)*self.lin_solver.x[n+p+m+nl:].copy()
 
         return x,r,y,zL,zU
 
@@ -1277,9 +1290,9 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         m = self.m
         p = self.p
 
-        x = self.LBL.x[:n].copy()
-        r = -self.LBL.x[n:n+p].copy()
-        y = -self.LBL.x[n+p:n+p+m].copy()
+        x = self.lin_solver.x[:n].copy()
+        r = -self.lin_solver.x[n:n+p].copy()
+        y = -self.lin_solver.x[n+p:n+p+m].copy()
         if self.initial_guess:
             zL = self.qp.Lvar[self.all_lb] - x[self.all_lb]
             zU = x[self.all_ub] - self.qp.Uvar[self.all_ub]
@@ -1292,6 +1305,269 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             zL /= x_minus_l
             zU = (-self.zU*(u_minus_x - x[self.all_ub]) + sigma*self.mu)
             zU /= u_minus_x
+
+        return x,r,y,zL,zU
+
+
+class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
+    u"""A regularized interior-point method using QR Factorization.
+
+    Note that this solver only works for convex quadratic problems that have
+    a diagonal Hessian; linear and least-squares problems are solved as well.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Instantiate a primal-dual-regularized IP solver for ``qp``.
+
+        :parameters:
+            :qp:       a :class:`QPModel` instance.
+
+        :keywords:
+            :scale_type: Perform row and column scaling of the constraint
+                         matrix A prior to solution (default: `none`).
+
+            :primal_reg_init: Initial value of primal regularization parameter
+                              (default: `1.0`).
+
+            :primal_reg_min: Minimum value of primal regularization parameter
+                             (default: `1.0e-8`).
+
+            :dual_reg_init: Initial value of dual regularization parameter
+                            (default: `1.0`).
+
+            :dual_reg_min: Minimum value of dual regularization parameter
+                           (default: `1.0e-8`).
+
+            :bump_max: Max number of times regularization parameters are
+                       increased when a factorization fails (default 5).
+
+            :logger_name: Name of a logger to control output.
+
+            :estimate_cond: Estimate the matrix condition number when solving
+                            the linear system (default: `False`)
+
+            :itermax: Max number of iterations. (default: max(100,10*qp.n))
+
+            :mehrotra_pc: Use Mehrotra's predictor-corrector strategy
+                          to update the step (default: `True`) If `False`,
+                          use a variant of the long-step method.
+
+            :stoptol: The convergence tolerance (default: 1.0e-6)
+        """
+        super(RegQPInteriorPointSolverQR, self).__init__(*args, **kwargs)
+
+    def initialize_system(self):
+        """Initialize the system matrix and right-hand side.
+
+        For the QR-based solver, the system is rectangular.
+        """
+        n = self.n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        self.sys_size = p + m + nl + nu
+        size_hint = self.A.nnz + self.C.nnz + nl + nu
+
+        # *** DEV NOTE: Pysparse doesn't contain a transpose operator,
+        # so the code below constructs the *transpose* of the matrix in 
+        # the linear system. At solve time, we swap the column and row
+        # index arrays in the COO format to obtain the same effect
+        self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
+            sizeHint=size_hint+self.sys_size)
+
+        # Store the diagonal and main column block separately for clear
+        # code later on
+        self.K_block = PysparseMatrix(nrow=self.sys_size, ncol=n,
+            sizeHint=size_hint)
+        self.K_diag = np.zeros(self.sys_size)
+
+        self.rhs = np.zeros(self.sys_size + n)
+        self.K_scaling = np.ones(self.sys_size + n)
+        return
+
+    def initialize_linear_solver(self):
+        """Set up the linear solver, given the constructed matrix.
+
+        For the QR version, this is not necessary; all the work is done
+        in the solve_system() method."""
+        return
+
+    def set_system_matrix(self):
+        """Set up the linear system matrix."""
+        n = self.n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+
+        if self.initial_guess:
+            self.log.debug('Setting up matrix for initial guess')
+
+            # Main block column
+            self.K_block[:p, :] = self.C
+            self.K_block[p:p+m, :] = self.A
+            self.K_block.put(1.0, range(p+m, p+m+nl), self.all_lb)
+            self.K_block.put(1.0, range(p+m+nl, p+m+nl+nu), self.all_ub)
+
+            # Diagonals
+            self.K_diag[:p] = 1.0
+            self.K_diag[p:p+m] = self.dual_reg_min**0.5
+            self.K_diag[p+m:] = 1.0
+
+            # Apply scaling
+            self.K_scaling[:n] = (self.diagH + self.primal_reg_min**0.5)**-0.5
+
+        else:
+            self.log.debug('Setting up matrix for current iteration')
+            Lvar = self.qp.Lvar
+            Uvar = self.qp.Uvar
+            x = self.x
+            zL = self.zL
+            zU = self.zU
+            x_minus_l = x[self.all_lb] - Lvar[self.all_lb]
+            u_minus_x = Uvar[self.all_ub] - x[self.all_ub]
+
+            # Main block column
+            self.K_block[:p, :] = self.C
+            self.K_block[p:p+m, :] = self.A
+            self.K_block.put(zL**0.5, range(p+m, p+m+nl), self.all_lb)
+            self.K_block.put(zU**0.5, range(p+m+nl, p+m+nl+nu), self.all_ub)
+
+            # Diagonals
+            self.K_diag[:p] = 1.0
+            self.K_diag[p:p+m] = self.dual_reg
+            self.K_diag[p+m:p+m+nl] = x_minus_l
+            self.K_diag[p+m+nl:] = u_minus_x
+
+            # Apply scaling
+            self.K_scaling[:n] = (self.diagH + self.primal_reg)**-0.5
+
+        # Form rectangular K for the QR solve step
+        self.K[:, :n] = self.K_block
+        self.K.put(self.K_diag**0.5, range(self.sys_size), range(n,n+self.sys_size))
+        self.K.col_scale(self.K_scaling)
+
+        return
+
+    def check_degeneracy(self):
+        """This function is not needed for the QR implementation."""
+        return True
+
+    def set_system_rhs(self, **kwargs):
+        """Set up the linear system right-hand side."""
+        n = self.n
+        m = self.m
+        p = self.p
+        nl = self.nl
+
+        Lvar = self.qp.Lvar
+        Uvar = self.qp.Uvar
+
+        self.log.debug('Setting up linear system right-hand side')
+
+        self.rhs_block = np.zeros(self.sys_size)
+
+        if self.initial_guess:
+            if not kwargs.get('dual',False):
+                # Primal initial point RHS
+                self.rhs[:n] = 0.0
+                self.rhs_block[p:p+m] = self.b
+            else:
+                # Dual initial point RHS
+                self.rhs[:n] = -self.c
+                self.rhs_block[p:p+m] = 0.0
+            self.rhs_block[:p] = self.d
+            self.rhs_block[p+m:p+m+nl] = Lvar[self.all_lb]
+            self.rhs_block[p+m+nl:] = Uvar[self.all_ub]
+        else:
+            x = self.x
+            sigma = kwargs.get('sigma',0.0)
+            x_minus_l = x[self.all_lb] - Lvar[self.all_lb]
+            u_minus_x = Uvar[self.all_ub] - x[self.all_ub]
+
+            self.rhs[:n] = -self.dFeas
+            self.rhs_block[:p] = -self.lsqRes
+            self.rhs_block[p:p+m] = -self.pFeas
+            self.rhs_block[p+m:p+m+nl] = (self.zL**-0.5)*(-self.lComp + sigma*self.mu)
+            self.rhs_block[p+m+nl:] = (self.zU**-0.5)*(self.uComp - sigma*self.mu)
+
+        self.rhs[:n] += (1/self.K_diag)*self.rhs_block*self.K_block
+        self.rhs[n:] = 0.0
+        # Reuse the scaling vector for the linear system itself
+        self.rhs *= self.K_scaling
+
+        return
+
+    def solve_system(self):
+        """Solve the linear system with qr_mumps."""
+
+        # For the qr_mumps interface, we skip the initialization step and
+        # just create and run the solver here
+        #
+        # Logged an issue that the interface should be able to analyze once
+        # and factorize many times with different data.
+        n = self.n
+        nrow = self.sys_size + self.n
+        ncol = self.sys_size
+        kval, krow, kcol = self.K.find()
+
+        # *** DEV NOTE: rows and columns swapped because we cannot construct
+        # the transpose matrix directly in Pysparse (which we would like)
+        self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
+            verbose=False)
+        # self.lin_solver.analyze('metis')
+        # self.lin_solver.factorize()
+        self.delta_w = self.lin_solver.least_squares(self.rhs)
+        return
+
+    def extract_xyz(self, **kwargs):
+        """Return the partitioned solution vector"""
+        n = self.n
+        m = self.m
+        p = self.p
+        nl = self.nl
+        nu = self.nu
+        Lvar = self.qp.Lvar
+        Uvar = self.qp.Uvar
+
+        # The following steps are needed:
+        # 1) Compute x from self.delta_w and the RHS
+        # 2) Compute w from self.delta_w and known K and RHS blocks
+        # 3) Extract r, y, zL, and zU from w
+
+        if self.initial_guess:
+            x = self.rhs[:n].copy()
+            x -= (self.delta_w*self.K_block)*self.K_scaling[:n]
+            x *= self.K_scaling[:n]
+
+            w = np.zeros(self.sys_size)
+            w += self.delta_w
+            w -= (1/self.K_diag)*self.rhs_block
+
+            r = -w[:p].copy()
+            y = -w[p:p+m].copy()
+            zL = -w[p+m:p+m+nl].copy()
+            zU = w[p+m+nl:].copy()
+        else:
+            # Some shorthand variables
+            sigma = kwargs.get('sigma',0.0)
+            x_minus_l = self.x[self.all_lb] - Lvar[self.all_lb]
+            u_minus_x = Uvar[self.all_ub] - self.x[self.all_ub]
+
+            x = self.rhs[:n].copy()
+            x -= (self.delta_w*self.K_block)*self.K_scaling[:n]
+            x *= self.K_scaling[:n]
+
+            w = np.zeros(self.sys_size)
+            w += self.delta_w
+            w -= (1/self.K_diag)*self.rhs_block
+
+            r = -w[:p].copy()
+            y = -w[p:p+m].copy()
+            zL = -(self.zL**0.5)*w[p+m:p+m+nl].copy()
+            zU = (self.zU**0.5)*w[p+m+nl:].copy()
 
         return x,r,y,zL,zU
 
@@ -1355,8 +1631,7 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         self.set_system_matrix()
 
         # Analyze and factorize the matrix
-        self.LBL = LBLContext(self.K,
-            sqd=(self.primal_reg_min > 0.0 and self.dual_reg_min > 0.0))
+        self.initialize_linear_solver()
 
         # Assemble first right-hand side
         self.set_system_rhs()
@@ -1839,15 +2114,15 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         nl = self.nl
         z_start = n+on+p+m
 
-        x = self.LBL.x[:n+on].copy()
-        r = -self.LBL.x[n+on:n+on+p].copy()
-        y = -self.LBL.x[n+on+p:n+on+p+m].copy()
+        x = self.lin_solver.x[:n+on].copy()
+        r = -self.lin_solver.x[n+on:n+on+p].copy()
+        y = -self.lin_solver.x[n+on+p:n+on+p+m].copy()
         if self.initial_guess:
-            zL = -self.LBL.x[z_start:z_start+nl+on].copy()
-            zU = self.LBL.x[z_start+nl+on:].copy()
+            zL = -self.lin_solver.x[z_start:z_start+nl+on].copy()
+            zU = self.lin_solver.x[z_start+nl+on:].copy()
         else:
-            zL = -(self.zL**0.5)*self.LBL.x[z_start:z_start+nl+on].copy()
-            zU = (self.zU**0.5)*self.LBL.x[z_start+nl+on:].copy()
+            zL = -(self.zL**0.5)*self.lin_solver.x[z_start:z_start+nl+on].copy()
+            zU = (self.zU**0.5)*self.lin_solver.x[z_start+nl+on:].copy()
 
         return x,r,y,zL,zU
 
@@ -2119,9 +2394,9 @@ class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
         nl = self.nl
         nu = self.nu
 
-        x = self.LBL.x[:n+on].copy()
-        r = -self.LBL.x[n+on:n+on+p].copy()
-        y = -self.LBL.x[n+on+p:n+on+p+m].copy()
+        x = self.lin_solver.x[:n+on].copy()
+        r = -self.lin_solver.x[n+on:n+on+p].copy()
+        y = -self.lin_solver.x[n+on+p:n+on+p+m].copy()
         zL = np.zeros(nl+on, dtype=np.float)
         zU = np.zeros(nu+on, dtype=np.float)
 
