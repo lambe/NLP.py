@@ -1372,12 +1372,12 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         # *** DEV NOTE: Pysparse doesn't contain a transpose operator,
         # so the code below constructs the *transpose* of the matrix in 
-        # the linear system. At solve time, we swap the column and row
+        # the least-squares system. At solve time, we swap the column and row
         # index arrays in the COO format to obtain the same effect
         self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
             sizeHint=size_hint+self.sys_size)
 
-        # Store the diagonal and main column block separately for clear
+        # Store the diagonal and main least-squares block separately for clear
         # code later on
         self.K_block = PysparseMatrix(nrow=self.sys_size, ncol=n,
             sizeHint=size_hint)
@@ -1417,7 +1417,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.K_diag[p+m:] = 1.0
 
             # Apply scaling
-            self.K_scaling[:n] = (self.diagH + self.primal_reg_min**0.5)**-0.5
+            self.K_scaling[:n] = self.diagH + self.primal_reg_min**0.5
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -1442,12 +1442,15 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.K_diag[p+m+nl:] = u_minus_x
 
             # Apply scaling
-            self.K_scaling[:n] = (self.diagH + self.primal_reg)**-0.5
+            self.K_scaling[:n] = self.diagH + self.primal_reg
 
         # Form rectangular K for the QR solve step
+        self.K_diag = self.K_diag**0.5
+        self.K_scaling = self.K_scaling**0.5
+
         self.K[:, :n] = self.K_block
-        self.K.put(self.K_diag**0.5, range(self.sys_size), range(n,n+self.sys_size))
-        self.K.col_scale(self.K_scaling)
+        self.K.put(self.K_diag, range(self.sys_size), range(n,n+self.sys_size))
+        self.K.col_scale(1./self.K_scaling)
 
         return
 
@@ -1493,10 +1496,10 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.rhs_block[p+m:p+m+nl] = (self.zL**-0.5)*(-self.lComp + sigma*self.mu)
             self.rhs_block[p+m+nl:] = (self.zU**-0.5)*(self.uComp - sigma*self.mu)
 
-        self.rhs[:n] += (1/self.K_diag)*self.rhs_block*self.K_block
+        self.rhs[:n] += ((self.K_diag**-2)*self.rhs_block)*self.K_block
         self.rhs[n:] = 0.0
         # Reuse the scaling vector for the linear system itself
-        self.rhs *= self.K_scaling
+        self.rhs *= 1./self.K_scaling
 
         return
 
@@ -1538,13 +1541,12 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         # 3) Extract r, y, zL, and zU from w
 
         if self.initial_guess:
-            x = self.rhs[:n].copy()
-            x -= (self.delta_w*self.K_block)*self.K_scaling[:n]
-            x *= self.K_scaling[:n]
+            x = (-self.delta_w*self.K_block)*(1./self.K_scaling[:n])
+            x += self.rhs[:n]
+            x *= (1./self.K_scaling[:n])
 
-            w = np.zeros(self.sys_size)
+            w = -self.rhs_block*(self.K_diag**-2)
             w += self.delta_w
-            w -= (1/self.K_diag)*self.rhs_block
 
             r = -w[:p].copy()
             y = -w[p:p+m].copy()
@@ -1556,13 +1558,12 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             x_minus_l = self.x[self.all_lb] - Lvar[self.all_lb]
             u_minus_x = Uvar[self.all_ub] - self.x[self.all_ub]
 
-            x = self.rhs[:n].copy()
-            x -= (self.delta_w*self.K_block)*self.K_scaling[:n]
-            x *= self.K_scaling[:n]
+            x = (-self.delta_w*self.K_block)*(1./self.K_scaling[:n])
+            x += self.rhs[:n]
+            x *= (1./self.K_scaling[:n])
 
-            w = np.zeros(self.sys_size)
+            w = -self.rhs_block*(self.K_diag**-2)
             w += self.delta_w
-            w -= (1/self.K_diag)*self.rhs_block
 
             r = -w[:p].copy()
             y = -w[p:p+m].copy()
