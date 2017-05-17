@@ -1392,6 +1392,16 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         For the QR version, this is not necessary; all the work is done
         in the solve_system() method."""
+        nrow = self.sys_size + self.n
+        ncol = self.sys_size
+        kval, krow, kcol = self.K.find()
+
+        # *** DEV NOTE: rows and columns swapped because we cannot construct
+        # the transpose matrix directly in Pysparse (which we would like)
+        self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
+            verbose=False)
+        self.lin_solver.analyze('metis')
+
         return
 
     def set_system_matrix(self):
@@ -1445,12 +1455,15 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.K_scaling[:n] = self.diagH + self.primal_reg
 
         # Form rectangular K for the QR solve step
+        # In this form, use row and column scaling of the off-diagonal
+        # matrix so that the rest contains an identity block
         self.K_diag = self.K_diag**0.5
         self.K_scaling = self.K_scaling**0.5
 
         self.K[:, :n] = self.K_block
-        self.K.put(self.K_diag, range(self.sys_size), range(n,n+self.sys_size))
         self.K.col_scale(1./self.K_scaling)
+        self.K.row_scale(1./self.K_diag)
+        self.K.put(1.0, range(self.sys_size), range(n,n+self.sys_size))
 
         return
 
@@ -1496,8 +1509,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.rhs_block[p+m:p+m+nl] = (self.zL**-0.5)*(-self.lComp + sigma*self.mu)
             self.rhs_block[p+m+nl:] = (self.zU**-0.5)*(self.uComp - sigma*self.mu)
 
-        self.rhs[:n] += ((self.K_diag**-2)*self.rhs_block)*self.K_block
-        self.rhs[n:] = 0.0
+        # Nonzero in lower RHS block
+        self.rhs[n:] = (-1./self.K_diag)*self.rhs_block
+
         # Reuse the scaling vector for the linear system itself
         self.rhs *= 1./self.K_scaling
 
@@ -1506,23 +1520,14 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
     def solve_system(self):
         """Solve the linear system with qr_mumps."""
 
-        # For the qr_mumps interface, we skip the initialization step and
-        # just create and run the solver here
-        #
-        # Logged an issue that the interface should be able to analyze once
-        # and factorize many times with different data.
-        n = self.n
-        nrow = self.sys_size + self.n
-        ncol = self.sys_size
         kval, krow, kcol = self.K.find()
 
         # *** DEV NOTE: rows and columns swapped because we cannot construct
         # the transpose matrix directly in Pysparse (which we would like)
-        self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
-            verbose=False)
-        # self.lin_solver.analyze('metis')
-        # self.lin_solver.factorize()
-        self.delta_w = self.lin_solver.least_squares(self.rhs)
+        self.lin_solver.get_matrix_data(kcol, krow, kval)
+        self.lin_solver.factorize()
+        self.delta_w, self.res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+
         return
 
     def extract_xyz(self, **kwargs):
@@ -1536,34 +1541,28 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         Uvar = self.qp.Uvar
 
         # The following steps are needed:
-        # 1) Compute x from self.delta_w and the RHS
-        # 2) Compute w from self.delta_w and known K and RHS blocks
+        # 1) Compute x by scaling the least-squares residual
+        # 2) Compute w by scaling the least-squares solution
         # 3) Extract r, y, zL, and zU from w
 
         if self.initial_guess:
-            x = (-self.delta_w*self.K_block)*(1./self.K_scaling[:n])
-            x += self.rhs[:n]
+
+            x = self.res_vec[:n]
             x *= (1./self.K_scaling[:n])
 
-            w = -self.rhs_block*(self.K_diag**-2)
-            w += self.delta_w
+            w = (1./self.K_diag)*self.delta_w
 
             r = -w[:p].copy()
             y = -w[p:p+m].copy()
             zL = -w[p+m:p+m+nl].copy()
             zU = w[p+m+nl:].copy()
-        else:
-            # Some shorthand variables
-            sigma = kwargs.get('sigma',0.0)
-            x_minus_l = self.x[self.all_lb] - Lvar[self.all_lb]
-            u_minus_x = Uvar[self.all_ub] - self.x[self.all_ub]
 
-            x = (-self.delta_w*self.K_block)*(1./self.K_scaling[:n])
-            x += self.rhs[:n]
+        else:
+
+            x = self.res_vec[:n]
             x *= (1./self.K_scaling[:n])
 
-            w = -self.rhs_block*(self.K_diag**-2)
-            w += self.delta_w
+            w = (1./self.K_diag)*self.delta_w
 
             r = -w[:p].copy()
             y = -w[p:p+m].copy()
