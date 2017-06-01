@@ -12,7 +12,7 @@ CQP will try to minimize the quadratic approximation at the initial point.
 from cutest.model.cutestmodel import CUTEstModel
 from nlp.model.qpmodel import QPModel, LSQModel
 from nlp.model.nofixedvars import NoFixedVarsModel
-from nlp.optimize.cqp import RegQPInteriorPointSolver as CQP
+from nlp.optimize.cqp import RegQPInteriorPointSolver2x2QR as CQP
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
@@ -51,10 +51,15 @@ logger = config_logger("nlp", "%(name)-3s %(levelname)-5s %(message)s",
                                 stream=None,
                                 filename="cutest_qp_rough.txt", filemode="a")
 
-# Create Auglag logger.
+# Create Cqp logger.
 cqp_logger = config_logger("nlp.cqp",
                               "%(name)-8s %(levelname)-5s %(message)s",
                               level=logging.WARN if nprobs > 1 else logging.INFO)
+# cqp_logger = config_logger("nlp.cqp",
+#                               "%(name)-8s %(levelname)-5s %(message)s",
+#                               stream=None,
+#                               filename="test_prob_qr_lsq.txt", filemode="w",
+#                               level=logging.WARN if nprobs > 1 else logging.INFO)
 
 if nprobs > 1:
     logger.info("%9s %5s %5s %6s %8s %8s %6s %6s %5s %7s",
@@ -77,10 +82,11 @@ for name in args.name_list:
         modprob = prob
 
     # Test either the standard QP or the least-squares version
-    qp = QPModel(fromProb=(modprob,None,None))
-    # qp = LSQModel(fromProb=(modprob,None,None))
+    # qp = QPModel(fromProb=(modprob,None,None))
+    qp = LSQModel(fromProb=(modprob,None,None))
 
-    cqp = CQP(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale)
+    cqp = CQP(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+        primal_reg_min=1.0e-8, dual_reg_min=1.0e-8)
 
     # Solve the problem and print the result
     try:

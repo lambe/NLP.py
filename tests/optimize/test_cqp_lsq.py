@@ -12,7 +12,7 @@ from nlp.model.qpmodel import LSQModel
 from pysparse.sparse import PysparseMatrix
 from nlp.optimize.cqp import RegQPInteriorPointSolver, RegQPInteriorPointSolver2x2
 from nlp.optimize.cqp import RegL1QPInteriorPointSolver, RegL1QPInteriorPointSolver2x2
-from nlp.optimize.cqp import RegQPInteriorPointSolverQR
+from nlp.optimize.cqp import RegQPInteriorPointSolverQR, RegQPInteriorPointSolver2x2QR
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
@@ -37,11 +37,12 @@ cqp_logger = config_logger("nlp.cqp","%(name)-8s %(levelname)-5s %(message)s")
 prob = LSQModel(name='LLS_1',fromOps=(c,H,None),lsqOps=(d,C),
 	nnzc=n*p)
 
-solver = RegQPInteriorPointSolver(prob)
+# solver = RegQPInteriorPointSolver(prob)
 # solver = RegQPInteriorPointSolver2x2(prob)
 # solver = RegL1QPInteriorPointSolver(prob, lam=1.0)
 # solver = RegL1QPInteriorPointSolver2x2(prob, lam=1.0)
 # solver = RegQPInteriorPointSolverQR(prob)
+solver = RegQPInteriorPointSolver2x2QR(prob)
 solver.solve()
 
 print solver.status
