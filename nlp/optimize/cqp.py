@@ -1356,6 +1356,10 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         """
         super(RegQPInteriorPointSolverQR, self).__init__(*args, **kwargs)
 
+        # Decide whether we form the least squares problem for the primal
+        # variables or the dual variables
+        self.primal_solve = kwargs.get('primal_solve',False)
+
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
@@ -1370,33 +1374,50 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         self.sys_size = p + m + nl + nu
         size_hint = self.A.nnz + self.C.nnz + nl + nu
 
-        # *** DEV NOTE: Pysparse doesn't contain a transpose operator,
-        # so the code below constructs the *transpose* of the matrix in 
-        # the least-squares system. At solve time, we swap the column and row
-        # index arrays in the COO format to obtain the same effect
-        self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
-            sizeHint=size_hint+self.sys_size)
+        if self.primal_solve:
+            self.K = PysparseMatrix(nrow=self.sys_size+n, ncol=n,
+                sizeHint=size_hint+n)
+
+        else:
+            # *** DEV NOTE: Pysparse doesn't contain a transpose operator,
+            # so the code below constructs the *transpose* of the matrix in 
+            # the least-squares system. At solve time, we swap the column and row
+            # index arrays in the COO format to obtain the same effect
+            self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
+                sizeHint=size_hint+self.sys_size)
 
         # Store the diagonal and main least-squares block separately for clear
         # code later on
         self.K_block = PysparseMatrix(nrow=self.sys_size, ncol=n,
             sizeHint=size_hint)
-        self.K_diag = np.zeros(self.sys_size)
+        self.K_diag_11 = np.zeros(n)
+        self.K_diag_22 = np.zeros(self.sys_size)
+        self.K_scaling = np.ones(self.sys_size + n)
 
         self.rhs = np.zeros(self.sys_size + n)
-        self.K_scaling = np.ones(self.sys_size + n)
         return
 
     def initialize_linear_solver(self):
         """Set up the linear solver, given the constructed matrix."""
-        nrow = self.sys_size + self.n
-        ncol = self.sys_size
-        kval, krow, kcol = self.K.find()
 
-        # *** DEV NOTE: rows and columns swapped because we cannot construct
-        # the transpose matrix directly in Pysparse (which we would like)
-        self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
-            verbose=False)
+        if self.primal_solve:
+            nrow = self.sys_size + self.n
+            ncol = self.n
+            kval, krow, kcol = self.K.find()
+
+            self.lin_solver = QRMUMPSSolver((nrow, ncol, krow, kcol, kval),
+                verbose=False)
+
+        else:
+            nrow = self.sys_size + self.n
+            ncol = self.sys_size
+            kval, krow, kcol = self.K.find()
+
+            # *** DEV NOTE: rows and columns swapped because we cannot construct
+            # the transpose matrix directly in Pysparse (which we would like)
+            self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
+                verbose=False)
+
         self.lin_solver.analyze('metis')
 
         return
@@ -1412,19 +1433,18 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         if self.initial_guess:
             self.log.debug('Setting up matrix for initial guess')
 
-            # Main block column
+            # Main block column / row
             self.K_block[:p, :] = self.C
             self.K_block[p:p+m, :] = self.A
             self.K_block.put(1.0, range(p+m, p+m+nl), self.all_lb)
             self.K_block.put(1.0, range(p+m+nl, p+m+nl+nu), self.all_ub)
 
             # Diagonals
-            self.K_diag[:p] = 1.0
-            self.K_diag[p:p+m] = self.dual_reg_min**0.5
-            self.K_diag[p+m:] = 1.0
+            self.K_diag_22[:p] = 1.0
+            self.K_diag_22[p:p+m] = self.dual_reg_min**0.5
+            self.K_diag_22[p+m:] = 1.0
 
-            # Apply scaling
-            self.K_scaling[:n] = self.diagH + self.primal_reg_min**0.5
+            self.K_diag_11[:] = self.diagH + self.primal_reg_min**0.5
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -1436,31 +1456,39 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             x_minus_l = x[self.all_lb] - Lvar[self.all_lb]
             u_minus_x = Uvar[self.all_ub] - x[self.all_ub]
 
-            # Main block column
+            # Main block column / row
             self.K_block[:p, :] = self.C
             self.K_block[p:p+m, :] = self.A
             self.K_block.put(zL**0.5, range(p+m, p+m+nl), self.all_lb)
             self.K_block.put(zU**0.5, range(p+m+nl, p+m+nl+nu), self.all_ub)
 
             # Diagonals
-            self.K_diag[:p] = 1.0
-            self.K_diag[p:p+m] = self.dual_reg
-            self.K_diag[p+m:p+m+nl] = x_minus_l
-            self.K_diag[p+m+nl:] = u_minus_x
+            self.K_diag_22[:p] = 1.0
+            self.K_diag_22[p:p+m] = self.dual_reg
+            self.K_diag_22[p+m:p+m+nl] = x_minus_l
+            self.K_diag_22[p+m+nl:] = u_minus_x
 
-            # Apply scaling
-            self.K_scaling[:n] = self.diagH + self.primal_reg
+            self.K_diag_11[:] = self.diagH + self.primal_reg
 
         # Form rectangular K for the QR solve step
-        # In this form, use row and column scaling of the off-diagonal
-        # matrix so that the rest contains an identity block
-        self.K_diag = self.K_diag**0.5
-        self.K_scaling = self.K_scaling**0.5
+        self.K_diag_11 = self.K_diag_11**0.5
+        self.K_diag_22 = self.K_diag_22**0.5
 
-        self.K[:, :n] = self.K_block
-        self.K.col_scale(1./self.K_scaling)
-        self.K.row_scale(1./self.K_diag)
-        self.K.put(1.0, range(self.sys_size), range(n,n+self.sys_size))
+        if self.primal_solve:
+            self.K[:self.sys_size, :] = self.K_block
+            self.K.put(1.0, range(self.sys_size, self.sys_size+n), range(n))
+
+            self.K_scaling[:self.sys_size] = 1./self.K_diag_22
+            self.K_scaling[self.sys_size:] = self.K_diag_11
+            self.K.row_scale(self.K_scaling)
+
+        else:
+            self.K[:, :n] = self.K_block
+            self.K.put(1.0, range(self.sys_size), range(n,n+self.sys_size))
+
+            self.K_scaling[:n] = 1./self.K_diag_11
+            self.K_scaling[n:] = self.K_diag_22
+            self.K.col_scale(self.K_scaling)
 
         return
 
@@ -1471,11 +1499,22 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
     def set_system_rhs(self, **kwargs):
         """Set up the linear system right-hand side."""
 
-        # Same RHS as parent class, but scaling terms attached
         super(RegQPInteriorPointSolverQR, self).set_system_rhs(**kwargs)
 
-        self.rhs[self.n:] *= -1./self.K_diag
-        self.rhs *= 1./self.K_scaling
+        if self.primal_solve:
+            # Similar to RHS in parent class, but block order is
+            # flipped and scaling is applied
+            temp_vec = self.rhs[:self.n].copy()
+            self.rhs[:self.sys_size] = self.rhs[self.n:]
+            self.rhs[self.sys_size:] = temp_vec
+
+            self.rhs[:self.sys_size] *= 1./self.K_diag_22
+            self.rhs[self.sys_size:] *= 1./self.K_diag_11
+
+        else:
+            # Same RHS as parent class, but scaling terms attached
+            self.rhs[:self.n] *= 1./self.K_diag_11
+            self.rhs[self.n:] *= -1./self.K_diag_22
 
         return
 
@@ -1484,11 +1523,24 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         kval, krow, kcol = self.K.find()
 
-        # *** DEV NOTE: rows and columns swapped because we cannot construct
-        # the transpose matrix directly in Pysparse (which we would like)
-        self.lin_solver.get_matrix_data(kcol, krow, kval)
+        if self.primal_solve:
+            self.lin_solver.get_matrix_data(krow, kcol, kval)
+        else:
+            # *** DEV NOTE: rows and columns swapped because we cannot construct
+            # the transpose matrix directly in Pysparse (which we would like)
+            self.lin_solver.get_matrix_data(kcol, krow, kval)
+
+        # Factorize and get the solution and residual vectors
         self.lin_solver.factorize()
-        self.delta_w, self.res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        self.soln_vec = np.zeros(self.sys_size + self.n)
+
+        if self.primal_solve:
+            self.soln_vec[:self.n] = delta_x
+            self.soln_vec[self.n:] = (-1./self.K_diag_22)*res_vec[:self.sys_size]
+        else:
+            self.soln_vec[:self.n] = (1./self.K_diag_11)*res_vec[:self.n]
+            self.soln_vec[self.n:] = delta_x
 
         return
 
@@ -1499,37 +1551,16 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         p = self.p
         nl = self.nl
         nu = self.nu
-        Lvar = self.qp.Lvar
-        Uvar = self.qp.Uvar
 
-        # The following steps are needed:
-        # 1) Compute x by scaling the least-squares residual
-        # 2) Compute w by scaling the least-squares solution
-        # 3) Extract r, y, zL, and zU from w
-
+        x = self.soln_vec[:n].copy()
+        r = -self.soln_vec[n:n+p].copy()
+        y = -self.soln_vec[n+p:n+p+m].copy()
         if self.initial_guess:
-
-            x = self.res_vec[:n]
-            x *= (1./self.K_scaling[:n])
-
-            w = (1./self.K_diag)*self.delta_w
-
-            r = -w[:p].copy()
-            y = -w[p:p+m].copy()
-            zL = -w[p+m:p+m+nl].copy()
-            zU = w[p+m+nl:].copy()
-
+            zL = -self.soln_vec[n+p+m:n+p+m+nl].copy()
+            zU = self.soln_vec[n+p+m+nl:].copy()
         else:
-
-            x = self.res_vec[:n]
-            x *= (1./self.K_scaling[:n])
-
-            w = (1./self.K_diag)*self.delta_w
-
-            r = -w[:p].copy()
-            y = -w[p:p+m].copy()
-            zL = -(self.zL**0.5)*w[p+m:p+m+nl].copy()
-            zU = (self.zU**0.5)*w[p+m+nl:].copy()
+            zL = -(self.zL**0.5)*self.soln_vec[n+p+m:n+p+m+nl].copy()
+            zU = (self.zU**0.5)*self.soln_vec[n+p+m+nl:].copy()
 
         return x,r,y,zL,zU
 
@@ -1582,6 +1613,10 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         """
         super(RegQPInteriorPointSolver2x2QR, self).__init__(*args, **kwargs)
 
+        # Decide whether we form the least squares problem for the primal
+        # variables or the dual variables
+        self.primal_solve = kwargs.get('primal_solve',False)
+
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
@@ -1594,13 +1629,17 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         self.sys_size = p + m
         size_hint = self.A.nnz + self.C.nnz
 
-        # Primal-solve least-squares
-        # self.K = PysparseMatrix(nrow=self.sys_size + n, ncol=n,
-        #     sizeHint=size_hint+n)
+        if self.primal_solve:
+            self.K = PysparseMatrix(nrow=self.sys_size + n, ncol=n,
+                sizeHint=size_hint+n)
 
-        # Dual-solve least-squares
-        self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
-            sizeHint=size_hint+self.sys_size)
+        else:
+            # *** DEV NOTE: Pysparse doesn't contain a transpose operator,
+            # so the code below constructs the *transpose* of the matrix in 
+            # the least-squares system. At solve time, we swap the column and row
+            # index arrays in the COO format to obtain the same effect
+            self.K = PysparseMatrix(nrow=self.sys_size, ncol=self.sys_size+n,
+                sizeHint=size_hint+self.sys_size)
 
         # Store the diagonal and main least-squares block separately
         # for clear code later on
@@ -1608,26 +1647,31 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             sizeHint=size_hint)
         self.K_diag_11 = np.zeros(n)
         self.K_diag_22 = np.zeros(self.sys_size)
+        self.K_scaling = np.ones(self.sys_size + n)
 
         self.rhs = np.zeros(self.sys_size + n)
         return
 
     def initialize_linear_solver(self):
         """Set up the linear solver, given the constructed matrix."""
-        nrow = self.sys_size + self.n
-        # ncol = self.n
-        ncol = self.sys_size
-        kval, krow, kcol = self.K.find()
 
-        # (Note for dual solve only)
-        # *** DEV NOTE: rows and columns swapped because we cannot construct
-        # the transpose matrix directly in Pysparse (which we would like)
+        if self.primal_solve:
+            nrow = self.sys_size + self.n
+            ncol = self.n
+            kval, krow, kcol = self.K.find()
 
-        # self.lin_solver = QRMUMPSSolver((nrow, ncol, krow, kcol, kval),
-        #     verbose=False)
-        self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
-            verbose=False)
-        self.lin_solver.analyze('metis')
+            self.lin_solver = QRMUMPSSolver((nrow, ncol, krow, kcol, kval),
+                verbose=False)
+
+        else:
+            nrow = self.sys_size + self.n
+            ncol = self.sys_size
+            kval, krow, kcol = self.K.find()
+
+            # *** DEV NOTE: rows and columns swapped because we cannot construct
+            # the transpose matrix directly in Pysparse (which we would like)
+            self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
+                verbose=False)
 
         return
 
@@ -1645,15 +1689,12 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             # Main block column
             self.K_block[:p, :n] = self.C
             self.K_block[p:, :n] = self.A
-            # self.K_block.put(1.0, range(p+m, p+m+nl), self.all_lb)
-            # self.K_block.put(1.0, range(p+m+nl, p+m+nl+nu), self.all_ub)
 
             # Diagonals
             self.K_diag_22[:p] = 1.0
             self.K_diag_22[p:] = self.dual_reg_min**0.5
-            # self.K_diag[p+m:] = 1.0
 
-            self.K_diag_11 = self.diagH + self.primal_reg_min**0.5
+            self.K_diag_11[:] = self.diagH + self.primal_reg_min**0.5
             self.K_diag_11[self.all_lb] += 1.0
             self.K_diag_11[self.all_ub] += 1.0
 
@@ -1670,42 +1711,34 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             # Main block column
             self.K_block[:p, :n] = self.C
             self.K_block[p:, :n] = self.A
-            # self.K_block.put(zL**0.5, range(p+m, p+m+nl), self.all_lb)
-            # self.K_block.put(zU**0.5, range(p+m+nl, p+m+nl+nu), self.all_ub)
 
             # Diagonals
             self.K_diag_22[:p] = 1.0
             self.K_diag_22[p:] = self.dual_reg
-            # self.K_diag[p+m:p+m+nl] = x_minus_l
-            # self.K_diag[p+m+nl:] = u_minus_x
 
             self.K_diag_11 = self.diagH + self.primal_reg
             self.K_diag_11[self.all_lb] += zL / x_minus_l
             self.K_diag_11[self.all_ub] += zU / u_minus_x
 
         # Form rectangular K for the QR solve step
-        # In this form, use row and column scaling of the off-diagonal
-        # matrix so that the rest contains an identity block
         self.K_diag_11 = self.K_diag_11**0.5
         self.K_diag_22 = self.K_diag_22**0.5
 
-        # Primal-solve least-squares
-        # K_scale_row = np.ones(self.sys_size + n)
-        # K_scale_row[:self.sys_size] = 1./self.K_diag_22
+        if self.primal_solve:
+            self.K[:self.sys_size, :] = self.K_block
+            self.K.put(1.0, range(self.sys_size, self.sys_size+n), range(n))
 
-        # self.K[:self.sys_size, :] = self.K_block
-        # # self.K.col_scale(1./self.K_diag_11)
-        # self.K.row_scale(K_scale_row)
-        # # self.K.put(1.0, range(self.sys_size, self.sys_size+n), range(n))
-        # self.K.put(self.K_diag_11, range(self.sys_size, self.sys_size+n), range(n))
+            self.K_scaling[:self.sys_size] = 1./self.K_diag_22
+            self.K_scaling[self.sys_size:] = self.K_diag_11
+            self.K.row_scale(self.K_scaling)
 
-        # Dual-solve least-squares
-        K_scale_col = np.ones(self.sys_size + n)
-        K_scale_col[:n] = 1./self.K_diag_11
+        else:
+            self.K[:, :n] = self.K_block
+            self.K.put(1.0, range(self.sys_size), range(n,self.sys_size+n))
 
-        self.K[:, :n] = self.K_block
-        self.K.col_scale(K_scale_col)
-        self.K.put(self.K_diag_22, range(self.sys_size), range(n,self.sys_size+n))
+            self.K_scaling[:n] = 1./self.K_diag_11
+            self.K_scaling[n:] = self.K_diag_22
+            self.K.col_scale(self.K_scaling)
 
         return
 
@@ -1716,21 +1749,22 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
     def set_system_rhs(self, **kwargs):
         """Set up the linear system right-hand side."""
 
-        # Similar structure to RHS in parent class, but block order is
-        # flipped and scaling is applied
         super(RegQPInteriorPointSolver2x2QR, self).set_system_rhs(**kwargs)
 
-        # Primal-solve least-squares
-        # temp_vec = self.rhs[:self.n].copy()
-        # self.rhs[:self.sys_size] = self.rhs[self.n:]
-        # self.rhs[self.sys_size:] = temp_vec
+        if self.primal_solve:
+            # Similar to RHS in parent class, but block order is
+            # flipped and scaling is applied
+            temp_vec = self.rhs[:self.n].copy()
+            self.rhs[:self.sys_size] = self.rhs[self.n:]
+            self.rhs[self.sys_size:] = temp_vec
 
-        # self.rhs[:self.sys_size] *= 1./self.K_diag_22
-        # self.rhs[self.sys_size:] *= 1./self.K_diag_11
+            self.rhs[:self.sys_size] *= 1./self.K_diag_22
+            self.rhs[self.sys_size:] *= 1./self.K_diag_11
 
-        # Dual solve least-squares
-        self.rhs[:self.n] *= 1./self.K_diag_11
-        self.rhs[self.n:] *= -1./self.K_diag_22
+        else:
+            # Same RHS as parent class, but scaling terms attached
+            self.rhs[:self.n] *= 1./self.K_diag_11
+            self.rhs[self.n:] *= -1./self.K_diag_22
 
         return
 
@@ -1739,10 +1773,24 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         kval, krow, kcol = self.K.find()
 
-        # self.lin_solver.get_matrix_data(krow, kcol, kval)
-        self.lin_solver.get_matrix_data(kcol, krow, kval)
+        if self.primal_solve:
+            self.lin_solver.get_matrix_data(krow, kcol, kval)
+        else:
+            # *** DEV NOTE: rows and columns swapped because we cannot construct
+            # the transpose matrix directly in Pysparse (which we would like)
+            self.lin_solver.get_matrix_data(kcol, krow, kval)
+
+        # Factorize and get the solution and residual vectors
         self.lin_solver.factorize()
-        self.delta_w, self.res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        self.soln_vec = np.zeros(self.sys_size + self.n)
+
+        if self.primal_solve:
+            self.soln_vec[:self.n] = delta_x
+            self.soln_vec[self.n:] = (-1./self.K_diag_22)*res_vec[:self.sys_size]
+        else:
+            self.soln_vec[:self.n] = (1./self.K_diag_11)*res_vec[:self.n]
+            self.soln_vec[self.n:] = delta_x
 
         return
 
@@ -1751,64 +1799,14 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         n = self.n
         m = self.m
         p = self.p
-        # nl = self.nl
-        # nu = self.nu
-        # Lvar = self.qp.Lvar
-        # Uvar = self.qp.Uvar
 
-        # The following steps are needed (primal solve):
-        # 1) Compute x by scaling the least-squares solution
-        # 2) Compute w by scaling the least-squares residual
-        # 3) Extract r and y from w
-        # 4) Compute zL and zU from x
-
-        # pdb.set_trace()
-
+        x = self.soln_vec[:n].copy()
+        r = -self.soln_vec[n:n+p].copy()
+        y = -self.soln_vec[n+p:n+p+m].copy()
         if self.initial_guess:
-
-            # Dual
-            x = self.res_vec[:n]
-            x *= (1./self.K_diag_11)
-
-            # Primal
-            # x = (1./self.K_diag_11)*self.delta_w
-            # x = self.delta_w
-
-            # Dual
-            # w = (1./self.K_diag_22)*self.delta_w
-            w = self.delta_w
-
-            # Primal
-            # w = -self.res_vec[:self.sys_size]
-            # w *= (1./self.K_diag_22)
-
-            r = -w[:p].copy()
-            y = -w[p:].copy()
-
             zL = self.qp.Lvar[self.all_lb] - x[self.all_lb]
             zU = x[self.all_ub] - self.qp.Uvar[self.all_ub]
-
         else:
-
-            # Dual
-            x = self.res_vec[:n]
-            x *= (1./self.K_diag_11[:n])
-
-            # Primal
-            # x = (1./self.K_diag_11)*self.delta_w
-            # x = self.delta_w
-
-            # Dual
-            # w = (1./self.K_diag_22)*self.delta_w
-            w = self.delta_w
-
-            # Primal
-            # w = self.res_vec[:self.sys_size]
-            # w *= (1./self.K_diag_22)
-
-            r = -w[:p].copy()
-            y = -w[p:].copy()
-            
             sigma = kwargs.get('sigma',0.0)
             x_minus_l = self.x[self.all_lb] - self.qp.Lvar[self.all_lb]
             u_minus_x = self.qp.Uvar[self.all_ub] - self.x[self.all_ub]
