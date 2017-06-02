@@ -1360,6 +1360,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         # variables or the dual variables
         self.primal_solve = kwargs.get('primal_solve',False)
 
+        # Decide whether we apply further scaling to the QR system
+        self.extra_scale = kwargs.get('extra_scale',False)
+
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
@@ -1482,6 +1485,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.K_scaling[self.sys_size:] = self.K_diag_11
             self.K.row_scale(self.K_scaling)
 
+            if self.extra_scale:
+                self.K.col_scale(1./self.K_diag_11)
+
         else:
             self.K[:, :n] = self.K_block
             self.K.put(1.0, range(self.sys_size), range(n,n+self.sys_size))
@@ -1489,6 +1495,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.K_scaling[:n] = 1./self.K_diag_11
             self.K_scaling[n:] = self.K_diag_22
             self.K.col_scale(self.K_scaling)
+
+            if self.extra_scale:
+                self.K.row_scale(1./self.K_diag_22)
 
         return
 
@@ -1536,11 +1545,17 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         self.soln_vec = np.zeros(self.sys_size + self.n)
 
         if self.primal_solve:
-            self.soln_vec[:self.n] = delta_x
+            if self.extra_scale:
+                self.soln_vec[:self.n] = (1./self.K_diag_11)*delta_x
+            else:
+                self.soln_vec[:self.n] = delta_x
             self.soln_vec[self.n:] = (-1./self.K_diag_22)*res_vec[:self.sys_size]
         else:
             self.soln_vec[:self.n] = (1./self.K_diag_11)*res_vec[:self.n]
-            self.soln_vec[self.n:] = delta_x
+            if self.extra_scale:
+                self.soln_vec[self.n:] = (1./self.K_diag_22)*delta_x
+            else:
+                self.soln_vec[self.n:] = delta_x
 
         return
 
@@ -1616,6 +1631,9 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         # Decide whether we form the least squares problem for the primal
         # variables or the dual variables
         self.primal_solve = kwargs.get('primal_solve',False)
+
+        # Decide whether we apply further scaling to the QR system
+        self.extra_scale = kwargs.get('extra_scale',False)
 
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
@@ -1732,6 +1750,9 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             self.K_scaling[self.sys_size:] = self.K_diag_11
             self.K.row_scale(self.K_scaling)
 
+            if self.extra_scale:
+                self.K.col_scale(1./self.K_diag_11)
+
         else:
             self.K[:, :n] = self.K_block
             self.K.put(1.0, range(self.sys_size), range(n,self.sys_size+n))
@@ -1739,6 +1760,9 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             self.K_scaling[:n] = 1./self.K_diag_11
             self.K_scaling[n:] = self.K_diag_22
             self.K.col_scale(self.K_scaling)
+
+            if self.extra_scale:
+                self.K.row_scale(1./self.K_diag_22)
 
         return
 
@@ -1786,11 +1810,17 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         self.soln_vec = np.zeros(self.sys_size + self.n)
 
         if self.primal_solve:
-            self.soln_vec[:self.n] = delta_x
+            if self.extra_scale:
+                self.soln_vec[:self.n] = (1./self.K_diag_11)*delta_x
+            else:
+                self.soln_vec[:self.n] = delta_x
             self.soln_vec[self.n:] = (-1./self.K_diag_22)*res_vec[:self.sys_size]
         else:
             self.soln_vec[:self.n] = (1./self.K_diag_11)*res_vec[:self.n]
-            self.soln_vec[self.n:] = delta_x
+            if self.extra_scale:
+                self.soln_vec[self.n:] = (1./self.K_diag_22)*delta_x
+            else:
+                self.soln_vec[self.n:] = delta_x
 
         return
 
