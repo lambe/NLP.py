@@ -477,14 +477,19 @@ class RegQPInteriorPointSolver(object):
                 else:
                     sigma = 0.0
 
+                # Solve augmented system.
+                self.set_system_rhs(sigma=sigma)
+                self.solve_system(new_matrix=False)
+                dx, dr, dy, dzL, dzU = self.extract_xyz(sigma=sigma)
+
             else:
                 # Use long-step method: Compute centering parameter.
                 sigma = min(0.1, 100 * self.mu)
 
-            # Solve augmented system.
-            self.set_system_rhs(sigma=sigma)
-            self.solve_system()
-            dx, dr, dy, dzL, dzU = self.extract_xyz(sigma=sigma)
+                # Solve augmented system.
+                self.set_system_rhs(sigma=sigma)
+                self.solve_system()
+                dx, dr, dy, dzL, dzU = self.extract_xyz(sigma=sigma)
 
             # Update regularization parameters before calculating the 
             # step sizes
@@ -650,7 +655,7 @@ class RegQPInteriorPointSolver(object):
         self.set_system_rhs(dual=True)
 
         # Solve system and collect solution
-        self.solve_system()
+        self.solve_system(new_matrix=False)
         _, r, y, zL_guess, zU_guess = self.extract_xyz(dual=True)
 
         # Use Mehrotra's heuristic to compute a strictly feasible starting
@@ -1006,7 +1011,7 @@ class RegQPInteriorPointSolver(object):
 
         return
 
-    def solve_system(self):
+    def solve_system(self, **kwargs):
         """Solve the augmented system with current right-hand side.
 
         The solution may be iteratively refined based on solver options
@@ -1528,7 +1533,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         return
 
-    def solve_system(self):
+    def solve_system(self, **kwargs):
         """Solve the linear system with qr_mumps."""
 
         kval, krow, kcol = self.K.find()
@@ -1540,8 +1545,14 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             # the transpose matrix directly in Pysparse (which we would like)
             self.lin_solver.get_matrix_data(kcol, krow, kval)
 
-        # Factorize and get the solution and residual vectors
-        self.lin_solver.factorize()
+        # Factorization is expensive, so only do it if we have new data
+        # (Note: the get_matrix_data method must still be called with the correct
+        # matrix data to function properly)
+        new_matrix = kwargs.get('new_matrix',True)
+        if new_matrix:
+            self.lin_solver.factorize()
+
+        # Get the solution and residual vectors
         delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
         self.soln_vec = np.zeros(self.sys_size + self.n)
 
@@ -1842,7 +1853,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         return
 
-    def solve_system(self):
+    def solve_system(self, **kwargs):
         """Solve the linear system with qr_mumps."""
 
         kval, krow, kcol = self.K.find()
@@ -1854,8 +1865,14 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
             # the transpose matrix directly in Pysparse (which we would like)
             self.lin_solver.get_matrix_data(kcol, krow, kval)
 
-        # Factorize and get the solution and residual vectors
-        self.lin_solver.factorize()
+        # Factorization is expensive, so only do it if we have new data
+        # (Note: the get_matrix_data method must still be called with the correct
+        # matrix data to function properly)
+        new_matrix = kwargs.get('new_matrix',True)
+        if new_matrix:
+            self.lin_solver.factorize()
+
+        # Get the solution and residual vectors
         delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
         self.soln_vec = np.zeros(self.sys_size + self.n)
 
