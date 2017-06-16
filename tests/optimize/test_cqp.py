@@ -8,7 +8,7 @@ The test problem used here is Hock-Schittkowski 21.
 from nlp.model.nlpmodel import SparseNLPModel
 from nlp.model.qpmodel import QPModel
 from nlp.optimize.cqp import RegQPInteriorPointSolver, RegQPInteriorPointSolver2x2
-from nlp.optimize.cqp import RegQPInteriorPointSolverQR
+from nlp.optimize.cqp import RegQPInteriorPointSolverQR, RegQPInteriorPointSolver2x2QR
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
@@ -72,7 +72,13 @@ print solver2.status
 print solver2.tsolve
 
 solverQR = RegQPInteriorPointSolverQR(test_prob_qp, mehrotra_pc=use_pc,
-    scale_type=use_scale)
+    scale_type=use_scale, primal_solve=True)
+solverQR.solve()
+print solverQR.status
+print solverQR.tsolve
+
+solverQR2 = RegQPInteriorPointSolver2x2QR(test_prob_qp, mehrotra_pc=use_pc,
+    scale_type=use_scale, primal_solve=True)
 solverQR.solve()
 print solverQR.status
 print solverQR.tsolve
