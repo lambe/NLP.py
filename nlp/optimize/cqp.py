@@ -1509,6 +1509,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         """Set up the linear system right-hand side."""
 
         super(RegQPInteriorPointSolverQR, self).set_system_rhs(**kwargs)
+        self.rhs_cp = self.rhs.copy()
 
         if self.primal_solve:
             # Similar to RHS in parent class, but block order is
@@ -1556,6 +1557,54 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
                 self.soln_vec[self.n:] = (1./self.K_diag_22)*delta_x
             else:
                 self.soln_vec[self.n:] = delta_x
+
+        # Compute the SQD system residual using the computed solution vector
+        # ** NOTE: RHS has been scaled, need original RHS for baseline **
+        new_rhs = self.rhs_cp.copy()
+        new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+        new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+        # Perform repeated iterative refinement if necessary to obtain
+        # an accurate step
+        old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+        new_norm = np.dot(new_rhs, new_rhs)**0.5
+        while new_norm / old_norm > 1.e-8:
+            # Apply appropriate scaling to updated RHS
+            if self.primal_solve:
+                temp_vec = new_rhs[:self.n].copy()
+                new_rhs[:self.sys_size] = new_rhs[self.n:]
+                new_rhs[self.sys_size:] = temp_vec
+
+                new_rhs[:self.sys_size] *= 1./self.K_diag_22
+                new_rhs[self.sys_size:] *= 1./self.K_diag_11
+
+            else:
+                new_rhs[:self.n] *= 1./self.K_diag_11
+                new_rhs[self.n:] *= -1./self.K_diag_22
+
+            # Second linear solve (no extra factorization necessary)
+            delta_x, res_vec, _ = self.lin_solver.solve(new_rhs, compute_residuals=True)
+
+            # Apply refinement step and check norms again
+            if self.primal_solve:
+                if self.extra_scale:
+                    self.soln_vec[:self.n] += (1./self.K_diag_11)*delta_x
+                else:
+                    self.soln_vec[:self.n] += delta_x
+                self.soln_vec[self.n:] += (-1./self.K_diag_22)*res_vec[:self.sys_size]
+            else:
+                self.soln_vec[:self.n] += (1./self.K_diag_11)*res_vec[:self.n]
+                if self.extra_scale:
+                    self.soln_vec[self.n:] += (1./self.K_diag_22)*delta_x
+                else:
+                    self.soln_vec[self.n:] += delta_x
+
+            new_rhs = self.rhs_cp.copy()
+            new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+            new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+            # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+            new_norm = np.dot(new_rhs, new_rhs)**0.5
 
         return
 
@@ -1774,6 +1823,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         """Set up the linear system right-hand side."""
 
         super(RegQPInteriorPointSolver2x2QR, self).set_system_rhs(**kwargs)
+        self.rhs_cp
 
         if self.primal_solve:
             # Similar to RHS in parent class, but block order is
@@ -1821,6 +1871,54 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
                 self.soln_vec[self.n:] = (1./self.K_diag_22)*delta_x
             else:
                 self.soln_vec[self.n:] = delta_x
+
+        # Compute the SQD system residual using the computed solution vector
+        # ** NOTE: RHS has been scaled, need original RHS for baseline **
+        new_rhs = self.rhs_cp.copy()
+        new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+        new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+        # Perform repeated iterative refinement if necessary to obtain
+        # an accurate step
+        old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+        new_norm = np.dot(new_rhs, new_rhs)**0.5
+        while new_norm / old_norm > 1.e-8:
+            # Apply appropriate scaling to updated RHS
+            if self.primal_solve:
+                temp_vec = new_rhs[:self.n].copy()
+                new_rhs[:self.sys_size] = new_rhs[self.n:]
+                new_rhs[self.sys_size:] = temp_vec
+
+                new_rhs[:self.sys_size] *= 1./self.K_diag_22
+                new_rhs[self.sys_size:] *= 1./self.K_diag_11
+
+            else:
+                new_rhs[:self.n] *= 1./self.K_diag_11
+                new_rhs[self.n:] *= -1./self.K_diag_22
+
+            # Second linear solve (no extra factorization necessary)
+            delta_x, res_vec, _ = self.lin_solver.solve(new_rhs, compute_residuals=True)
+
+            # Apply refinement step and check norms again
+            if self.primal_solve:
+                if self.extra_scale:
+                    self.soln_vec[:self.n] += (1./self.K_diag_11)*delta_x
+                else:
+                    self.soln_vec[:self.n] += delta_x
+                self.soln_vec[self.n:] += (-1./self.K_diag_22)*res_vec[:self.sys_size]
+            else:
+                self.soln_vec[:self.n] += (1./self.K_diag_11)*res_vec[:self.n]
+                if self.extra_scale:
+                    self.soln_vec[self.n:] += (1./self.K_diag_22)*delta_x
+                else:
+                    self.soln_vec[self.n:] += delta_x
+
+            new_rhs = self.rhs_cp.copy()
+            new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+            new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+            # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+            new_norm = np.dot(new_rhs, new_rhs)**0.5
 
         return
 
