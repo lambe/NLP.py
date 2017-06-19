@@ -66,6 +66,9 @@ parser.add_argument("--no_extra_scale", dest='extra_scale', action='store_false'
     help="In the least-squares solver, solve for the original variables (default)")
 parser.set_defaults(extra_scale=False)
 
+parser.add_argument("--nitref", type=int, default=1,
+    help="Maximum number of iterative refinements to apply in the linear solve.")
+
 args = parser.parse_args()
 
 nprobs = len(args.name_list)
@@ -113,11 +116,11 @@ for name in args.name_list:
     if args.use_K2:
         cqp = RegQPInteriorPointSolver2x2QR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
             primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
-            extra_scale=args.extra_scale)
+            extra_scale=args.extra_scale, itref_max=args.nitref)
     else:
         cqp = RegQPInteriorPointSolverQR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
             primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
-            extra_scale=args.extra_scale)
+            extra_scale=args.extra_scale, itref_max=args.nitref)
 
     # Solve the problem and print the result
     try:

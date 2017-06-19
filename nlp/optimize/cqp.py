@@ -1368,6 +1368,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         # Decide whether we apply further scaling to the QR system
         self.extra_scale = kwargs.get('extra_scale',False)
 
+        # Maximum number of iterative refinements in QR solve
+        self.itref_max = kwargs.get('itref_max',1)        
+
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
 
@@ -1577,9 +1580,10 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         # Perform repeated iterative refinement if necessary to obtain
         # an accurate step
+        itref = 0
         old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
         new_norm = np.dot(new_rhs, new_rhs)**0.5
-        while new_norm / old_norm > 1.e-8:
+        while new_norm / old_norm > 1.e-8 and itref < self.itref_max:
             # Apply appropriate scaling to updated RHS
             if self.primal_solve:
                 temp_vec = new_rhs[:self.n].copy()
@@ -1616,6 +1620,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
             # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
             new_norm = np.dot(new_rhs, new_rhs)**0.5
+            itref += 1
 
         return
 
@@ -1694,6 +1699,9 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         # Decide whether we apply further scaling to the QR system
         self.extra_scale = kwargs.get('extra_scale',False)
+
+        # Maximum number of iterative refinements in QR solve
+        self.itref_max = kwargs.get('itref_max',1)
 
     def initialize_system(self):
         """Initialize the system matrix and right-hand side.
@@ -1834,7 +1842,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
         """Set up the linear system right-hand side."""
 
         super(RegQPInteriorPointSolver2x2QR, self).set_system_rhs(**kwargs)
-        self.rhs_cp
+        self.rhs_cp = self.rhs.copy()
 
         if self.primal_solve:
             # Similar to RHS in parent class, but block order is
@@ -1897,9 +1905,10 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         # Perform repeated iterative refinement if necessary to obtain
         # an accurate step
+        itref = 0
         old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
         new_norm = np.dot(new_rhs, new_rhs)**0.5
-        while new_norm / old_norm > 1.e-8:
+        while new_norm / old_norm > 1.e-8 and itref < self.itref_max:
             # Apply appropriate scaling to updated RHS
             if self.primal_solve:
                 temp_vec = new_rhs[:self.n].copy()
@@ -1936,6 +1945,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
             # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
             new_norm = np.dot(new_rhs, new_rhs)**0.5
+            itref += 1
 
         return
 
