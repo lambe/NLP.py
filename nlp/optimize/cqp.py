@@ -1543,20 +1543,32 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         if self.primal_solve:
             self.lin_solver.get_matrix_data(krow, kcol, kval)
+            rhs_sn = self.rhs*self.K
+            rhs_sn = rhs_sn.reshape(self.n)
         else:
             # *** DEV NOTE: rows and columns swapped because we cannot construct
             # the transpose matrix directly in Pysparse (which we would like)
             self.lin_solver.get_matrix_data(kcol, krow, kval)
+            rhs_sn = self.K*self.rhs
 
         # Factorization is expensive, so only do it if we have new data
         # (Note: the get_matrix_data method must still be called with the correct
         # matrix data to function properly)
         new_matrix = kwargs.get('new_matrix',True)
         if new_matrix:
-            self.lin_solver.factorize()
+            self.lin_solver.factorize(keeph=False)
+            # self.lin_solver.factorize()
 
         # Get the solution and residual vectors
-        delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        # delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
+        # delta_x, res_vec, _ = self.lin_solver.seminormal_solve(self.rhs, compute_residuals=True)
+        delta_x = self.lin_solver.seminormal_solve_mini(rhs_sn)
+        if self.primal_solve:
+            res_vec = self.rhs - self.K*delta_x
+        else:
+            mod = delta_x*self.K
+            res_vec = self.rhs - mod.reshape(self.sys_size + self.n)
+
         self.soln_vec = np.zeros(self.sys_size + self.n)
 
         if self.primal_solve:
@@ -1593,12 +1605,23 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
                 new_rhs[:self.sys_size] *= 1./self.K_diag_22
                 new_rhs[self.sys_size:] *= 1./self.K_diag_11
 
+                new_rhs_sn = new_rhs*self.K
+                new_rhs_sn = new_rhs_sn.reshape(self.n)
             else:
                 new_rhs[:self.n] *= 1./self.K_diag_11
                 new_rhs[self.n:] *= -1./self.K_diag_22
 
+                new_rhs_sn = self.K*new_rhs
+
             # Second linear solve (no extra factorization necessary)
-            delta_x, res_vec, _ = self.lin_solver.solve(new_rhs, compute_residuals=True)
+            # delta_x, res_vec, _ = self.lin_solver.solve(new_rhs, compute_residuals=True)
+            # delta_x, res_vec, _ = self.lin_solver.seminormal_solve(new_rhs, compute_residuals=True)
+            delta_x = self.lin_solver.seminormal_solve_mini(new_rhs_sn)
+            if self.primal_solve:
+                res_vec = new_rhs - self.K*delta_x
+            else:
+                mod = delta_x*self.K
+                res_vec = new_rhs - mod.reshape(self.sys_size + self.n)
 
             # Apply refinement step and check norms again
             if self.primal_solve:
