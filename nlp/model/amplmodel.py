@@ -9,9 +9,10 @@ except ImportError:
     raise
 
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import aslinearoperator
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.qnmodel import QuasiNewtonModel
-from pykrylov.linop import CoordLinearOperator
 from nlp.tools import sparse_vector_class as sv
 
 import tempfile
@@ -326,10 +327,8 @@ class AmplModel(NLPModel):
     def jop(self, x, *args, **kwargs):
         """Jacobian at x as a linear operator."""
         vals, rows, cols = self.jac(x, *args, **kwargs)
-        return CoordLinearOperator(vals, rows, cols,
-                                   nargin=self.nvar,
-                                   nargout=self.ncon,
-                                   symmetric=False)
+        J = sp.coo_matrix((vals, (rows, cols)), shape=(self.ncon, self.nvar))
+        return aslinearoperator(J)
 
     def jprod(self, x, p, **kwargs):
         """Evaluate Jacobian-vector product at x with p."""

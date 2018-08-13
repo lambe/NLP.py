@@ -109,7 +109,7 @@ setup(
     license='LGPL',
     platforms=["Windows", "Linux", "Solaris", "Mac OS-X", "Unix"],
     classifiers=filter(None, CLASSIFIERS.split('\n')),
-    install_requires=['numpy'],
+    install_requires=['numpy', 'scipy'],
     ext_modules=nlp_ext,
     package_dir={"nlp": "nlp"},
     packages=packages_list,
