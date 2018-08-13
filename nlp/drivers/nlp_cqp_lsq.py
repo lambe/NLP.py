@@ -8,6 +8,7 @@ Solve an NLP from the CUTEst collection using the NLP.py CQP solver.
 CQP assumes the problem is convex quadratic. If a general NLP is selected,
 CQP will try to minimize the quadratic approximation at the initial point.
 """
+from __future__ import print_function
 
 from cutest.model.cutestmodel import CUTEstModel
 from nlp.model.qpmodel import QPModel, LSQModel
@@ -26,7 +27,7 @@ import argparse
 # Set up the problem loggers
 def cqp_stats(cqp):
     """Obtain CQP statistics and indicate failures with negatives."""
-    print cqp.status
+    print(cqp.status)
     if cqp.status == "opt":
         it = cqp.iter
         fc, gc = cqp.qp.obj.ncalls, cqp.qp.grad.ncalls
