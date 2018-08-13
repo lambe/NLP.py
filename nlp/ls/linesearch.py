@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 """A general linesearch framework."""
+from __future__ import division
 
+from builtins import object
 from math import sqrt
 import numpy as np
 from nlp.tools.exceptions import LineSearchFailure
@@ -46,7 +47,7 @@ class LineSearch(object):
         self._step0 = max(kwargs.get("step", 1.0), 0)
         self._step = self._step0
 
-        self._stepmin = sqrt(eps) / 100
+        self._stepmin = sqeps / 100
         if self._step <= self.stepmin:
             raise LineSearchFailure("initial linesearch step too small")
 

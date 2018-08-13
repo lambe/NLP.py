@@ -1,14 +1,16 @@
-# -*- coding: utf-8 -*-
 """
 PyMSWolfe: Jorge Nocedal's modified More and Thuente linesearch
 guaranteeing satisfaction of the strong Wolfe conditions.
 """
+from __future__ import division
+from __future__ import print_function
 
+from builtins import object
 import numpy as np
 from nlp.ls._modified_strong_wolfe_linesearch import mcsrch
 
 
-class StrongWolfeLineSearch:
+class StrongWolfeLineSearch(object):
     """
     A general-purpose linesearch procedure enforcing the strong
     Wolfe conditions
@@ -108,15 +110,15 @@ class StrongWolfeLineSearch:
             self.curvature = True
 
         if self.info == 0:
-            print ' linesearch returned; incorrect input values:'
-            print '    stpmin = ', self.stpmin
-            print '    stpmax = ', self.stpmax
-            print '    ftol   = ', self.ftol
-            print '    gtol   = ', self.gtol
-            print '    xtol   = ', self.xtol
-            print '    n      = ', self.n
-            print '    stp    = ', self.stp
-            print '    maxfev = ', self.maxfev
+            print(' linesearch returned; incorrect input values:')
+            print('    stpmin = ', self.stpmin)
+            print('    stpmax = ', self.stpmax)
+            print('    ftol   = ', self.ftol)
+            print('    gtol   = ', self.gtol)
+            print('    xtol   = ', self.xtol)
+            print('    n      = ', self.n)
+            print('    stp    = ', self.stp)
+            print('    maxfev = ', self.maxfev)
         return
 
 
@@ -136,11 +138,11 @@ if __name__ == '__main__':
                                  d,
                                  lambda z: model.obj(z),
                                  lambda z: model.grad(z),
-                                 stp=1.0 / sqrt(np.dot(g, g)))
-    print ' Before search'
-    print '   f = ', f
-    print '   stpmax = ', SWLS.stpmax
+                                 stp=(1 / sqrt(np.dot(g, g)))
+    print(' Before search')
+    print('   f = ', f)
+    print('   stpmax = ', SWLS.stpmax)
     SWLS.search()
-    print ' After search'
-    print '   f = ', SWLS.f
-    print '   step length = ', SWLS.stp
+    print(' After search')
+    print('   f = ', SWLS.f)
+    print('   step length = ', SWLS.stp)

@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 """Class definition for Trust-Region Algorithm and Management."""
+from __future__ import division
 
+from builtins import object
 import numpy as np
 
 __docformat__ = 'restructuredtext'
@@ -32,7 +33,7 @@ class TrustRegion(object):
         self.radius_max = 1.0e+10
         self.eta1 = kwargs.get('eta1', 0.01)    # Step acceptance threshold
         self.eta2 = kwargs.get('eta2', 0.99)    # Radius increase threshold
-        self.gamma1 = kwargs.get('gamma1', 1.0 / 3)  # Radius decrease factor
+        self.gamma1 = kwargs.get('gamma1', 1 / 3)  # Radius decrease factor
         self.gamma2 = kwargs.get('gamma2', 2.5)    # Radius increase factor
         self.eps = np.finfo(np.double).eps  # Machine epsilon.
 

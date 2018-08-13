@@ -1,5 +1,5 @@
-# -*- coding: utf8 -*-
 """Quadratic/Cubic linesearch."""
+from __future__ import division
 
 from math import sqrt
 import numpy as np
@@ -35,7 +35,7 @@ class QuadraticCubicLineSearch(LineSearch):
                                                        **kwargs)
         self.__ftol = max(min(kwargs.get("ftol", 1.0e-4), 1 - sqeps), sqeps)
         self.__bkmax = max(kwargs.get("bkmax", 20), 0)
-        self.__eps1 = self.__eps2 = sqrt(eps) / 100
+        self.__eps1 = self.__eps2 = sqeps / 100
         self._bk = 0
         self._last_step = None
         self._last_trial_value = None
@@ -77,7 +77,7 @@ class QuadraticCubicLineSearch(LineSearch):
             phi0 = self.value
             phi_a0 = self._last_trial_value
             phi_a1 = self.trial_value
-            c = 1. / (a0**2 * a1**2 * (a1 - a0))
+            c = 1 / (a0**2 * a1**2 * (a1 - a0))
             M = np.array([[a0**2, -a1**2], [-a0**3, a1**3]])
             coeffs = c * np.dot(M, np.array([phi_a1 - phi0 - self.slope * a1,
                                              phi_a0 - phi0 - self.slope * a0]))
