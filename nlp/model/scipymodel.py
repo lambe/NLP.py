@@ -7,7 +7,6 @@ from nlp.model.nlpmodel import NLPModel
 from nlp.model.amplmodel import AmplModel
 from nlp.model.snlp import SlackModel
 from nlp.model.qnmodel import QuasiNewtonModel
-from pykrylov.linop.linop import linop_from_ndarray
 import numpy as np
 
 
@@ -27,8 +26,6 @@ class SciPyNLPModel(NLPModel):
 
     def jac(self, *args, **kwargs):
         """Evaluate sparse constraints Jacobian."""
-        if self.ncon == 0:  # SciPy cannot create sparse matrix of size 0.
-            return linop_from_ndarray(np.empty((0, self.nvar), dtype=np.float))
         vals, rows, cols = super(SciPyNLPModel, self).jac(*args, **kwargs)
         return sp.coo_matrix((vals, (rows, cols)),
                              shape=(self.ncon, self.nvar))
@@ -53,9 +50,6 @@ class SciPyAmplModel(AmplModel):
 
     def jac(self, *args, **kwargs):
         """Evaluate sparse constraints Jacobian."""
-        if self.ncon == 0:  # SciPy cannot create sparse matrix of size 0.
-            return linop_from_ndarray(np.empty((0, self.nvar), dtype=np.float))
-
         vals, rows, cols = super(SciPyAmplModel, self).jac(*args, **kwargs)
         return sp.coo_matrix((vals, (rows, cols)),
                              shape=(self.ncon, self.nvar))
@@ -110,9 +104,6 @@ class SciPySlackModel(SlackModel):
         of the constraint matrix is cheaper and the argument `x` is ignored.
 
         """
-        if self.ncon == 0:  # SciPy cannot create sparse matrix of size 0.
-            return linop_from_ndarray(np.empty((0, self.nvar), dtype=np.float))
-
         model = self.model
         on = self.original_n
 

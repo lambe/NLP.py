@@ -253,7 +253,6 @@ except:
 
 try:
     from scipy import sparse as sp
-    from pykrylov.linop.linop import linop_from_ndarray
 
     class SciPyAdolcModel(SparseAdolcModel):
         """`AdolcModel` with SciPy COO sparse matrices."""
@@ -280,9 +279,6 @@ try:
 
         def jac(self, *args, **kwargs):
             """Evaluate sparse constraints Jacobian."""
-            if self.ncon == 0:  # SciPy cannot create sparse matrix of size 0.
-                return linop_from_ndarray(np.empty((0, self.nvar),
-                                                   dtype=np.float))
             vals, rows, cols = super(SciPyAdolcModel, self).jac(*args,
                                                                 **kwargs)
             return sp.coo_matrix((vals, (rows, cols)),
