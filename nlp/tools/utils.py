@@ -1,6 +1,7 @@
-# -*- coding: utf-8 -*-
 """Utilities."""
+from __future__ import division
 
+from builtins import range
 import numpy as np
 import logging
 from math import copysign, sqrt
@@ -93,7 +94,7 @@ def roots_quadratic(q2, q1, q0, tol=1.0e-8, nitref=1):
     # Perform a few Newton iterations to improve accuracy.
     new_roots = []
     for root in roots:
-        for _ in xrange(nitref):
+        for _ in range(nitref):
             val = (a2 * root + a1) * root + a0
             der = 2.0 * a2 * root + a1
             if der == 0.0:

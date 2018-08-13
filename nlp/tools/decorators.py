@@ -1,5 +1,7 @@
 """Decorators useful in the context of NLP.py."""
+from __future__ import print_function
 
+from builtins import map
 import warnings
 import functools
 import hashlib
@@ -19,8 +21,8 @@ def deprecated(func):
         warnings.warn_explicit(
             "Call to deprecated function/method {}.".format(func.__name__),
             category=DeprecationWarning,
-            filename=func.func_code.co_filename,
-            lineno=func.func_code.co_firstlineno + 1
+            filename=func.__code__.co_filename,
+            lineno=func.__code__.co_firstlineno + 1
         )
         return func(*args, **kwargs)
     return new_func
@@ -61,10 +63,10 @@ def memoize_full(fcn):
     @functools.wraps(fcn)
     def _memoized_fcn(*args, **kwargs):
         args_signature = tuple(map(get_signature,
-                                   list(args) + kwargs.values()))
+                                   list(args) + list(kwargs.values())))
         if args_signature not in _cache:
             _cache[args_signature] = fcn(*args, **kwargs)
-        print _cache
+        print(_cache)
         return _cache[args_signature]
 
     return _memoized_fcn
@@ -81,7 +83,7 @@ def memoize_cheap(fcn):
 
     @functools.wraps(fcn)
     def _memoized_fcn(*args, **kwargs):
-        args_signature = map(get_signature, list(args) + kwargs.values())
+        args_signature = list(map(get_signature, list(args) + list(kwargs.values())))
         if args_signature != _cached_signature[0]:
             _cached_signature[0] = args_signature
             _cached_value[0] = fcn(*args, **kwargs)

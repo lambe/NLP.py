@@ -1,7 +1,10 @@
 # -*- coding: utf8 -*-
 
 """A simple derivative checker."""
+from __future__ import division
 
+from builtins import range
+from builtins import object
 import numpy as np
 from numpy.linalg import norm
 from math import sqrt
@@ -35,7 +38,7 @@ class DerivativeChecker(object):
             :logger_name: name of a logger object (default: None)
         """
         self.tol = kwargs.get('tol', 100 * sqrt(macheps))
-        self.step = kwargs.get('step', (macheps / 3)**(1. / 3))
+        self.step = kwargs.get('step', (macheps / 3)**(1 / 3))
         self.h = self.step * (1 + norm(x, 1))
 
         # Setup the logger. Install a NullHandler if no output needed.
@@ -149,7 +152,7 @@ class DerivativeChecker(object):
         # Check partial derivatives in turn.
         xph = self.x.copy()
         xmh = self.x.copy()
-        for i in xrange(n):
+        for i in range(n):
             xph[i] += self.step
             xmh[i] -= self.step
             dfdxi = (model.obj(xph) - model.obj(xmh)) / (2 * self.step)
@@ -191,7 +194,7 @@ class DerivativeChecker(object):
         # Check second partial derivatives in turn.
         xph = self.x.copy()
         xmh = self.x.copy()
-        for i in xrange(n):
+        for i in range(n):
             xph[i] += self.step
             xmh[i] -= self.step
             dgdx = (model.grad(xph) - model.grad(xmh)) / (2 * self.step)
@@ -200,7 +203,7 @@ class DerivativeChecker(object):
             if not hasattr(Hx, "__getitem__"):
                 ei[i] = 1
 
-            for j in xrange(i + 1):
+            for j in range(i + 1):
                 dgjdxi = dgdx[j]
 
                 if hasattr(Hx, "__getitem__"):
@@ -250,7 +253,7 @@ class DerivativeChecker(object):
         # Check partial derivatives of each constraint in turn.
         xph = self.x.copy()
         xmh = self.x.copy()
-        for i in xrange(n):  # i = variable.
+        for i in range(n):  # i = variable.
             xph[i] += self.step
             xmh[i] -= self.step
             dcdxi = (model.cons(xph) - model.cons(xmh)) / (2 * self.step)
@@ -259,7 +262,7 @@ class DerivativeChecker(object):
             if not hasattr(Jx, "__getitem__"):
                 ei[i] = 1
 
-            for j in xrange(m):  # j = constraint.
+            for j in range(m):  # j = constraint.
                 dcjdxi = dcdxi[j]
 
                 if hasattr(Jx, "__getitem__"):
@@ -301,7 +304,7 @@ class DerivativeChecker(object):
         y = np.zeros(m)
         xph = self.x.copy()
         xmh = self.x.copy()
-        for k in xrange(m):
+        for k in range(m):
             y[k] = -1
             Hk = self.model.hess(self.x, y, obj_weight=0)
             errs[k] = {}
@@ -316,7 +319,7 @@ class DerivativeChecker(object):
                 ej = np.zeros(n)
 
             # Check second partial derivatives in turn.
-            for i in xrange(n):
+            for i in range(n):
                 xph[i] += self.step
                 xmh[i] -= self.step
                 dgdx = (self.model.igrad(k, xph) -
@@ -326,7 +329,7 @@ class DerivativeChecker(object):
                 if not hasattr(Hk, "__getitem__"):
                     ei[i] = 1
 
-                for j in xrange(i + 1):
+                for j in range(i + 1):
                     dgjdxi = dgdx[j]
 
                     if hasattr(Hk, "__getitem__"):

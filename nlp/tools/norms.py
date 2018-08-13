@@ -1,5 +1,8 @@
 """Convenience functions for computing vector and matrix norms."""
+from __future__ import division
+from __future__ import print_function
 
+from builtins import range
 import numpy as np
 from numpy import infty
 from numpy.linalg import norm
@@ -77,9 +80,9 @@ if __name__ == '__main__':
     tol = 1e-6
     maxits = 100
 
-    print "Unsymmetric matrices"
-    for n in xrange(1, 100):
-        m = n / 2 + 1
+    print("Unsymmetric matrices")
+    for n in range(1, 100):
+        m = n // 2 + 1
         A = np.random.randn(n, m)
         Aop = LinearOperator(A.shape[1], A.shape[0],
                              lambda v: np.dot(A, v),
@@ -89,11 +92,11 @@ if __name__ == '__main__':
         normAop, _ = normest(Aop, tol=tol, maxits=maxits)
         error = abs(normA - normAop) / max(1, normA)
         if error > tol * 100:
-            print "Error in normest = %8.1e" % error
+            print("Error in normest = %8.1e" % error)
 
-    print
-    print "Symmetric matrices"
-    for n in xrange(1, 100):
+    print()
+    print("Symmetric matrices")
+    for n in range(1, 100):
         A = np.random.rand(n, n)
         A = .5 * (A.T + A)
         Aop = LinearOperator(A.shape[1], A.shape[0],
@@ -101,10 +104,10 @@ if __name__ == '__main__':
                              symmetric=True)
 
         if not Aop.symmetric:
-            print "Oops!"
+            print("Oops!")
 
         normA = np.linalg.norm(A, 2)
         normAop, _ = normest(Aop, tol=tol, maxits=maxits)
         error = abs(normA - normAop) / max(1, normA)
         if error > tol * 100:
-            print "Error in normest = %8.1e" % error
+            print("Error in normest = %8.1e" % error)

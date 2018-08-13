@@ -3,10 +3,16 @@
 # A sparse vector class for Python
 # D. Orban, 2004
 #
+from __future__ import division
+from __future__ import print_function
+from builtins import filter
+from builtins import range
+from builtins import object
 import numpy
 import types
 import operator
 import math
+import numbers
 
 """
 A dictionary-based sparse vector class which supports elementwise mathematical
@@ -14,7 +20,7 @@ operations and operations with other sparse vectors and numpy arrays.
 """
 
 
-class SparseVector:
+class SparseVector(object):
     """A dictionary-based sparse vector class.
 
     To initialize a sparse vector in R^1000, use, e.g.,
@@ -26,48 +32,48 @@ class SparseVector:
     """
 
     def __init__(self, n, d0):
-        if not isinstance(n, types.IntType):
+        if not isinstance(n, int):
             raise TypeError("Vector size must be integer")
         if n <= 0:
             raise ValueError("Vector size must be positive")
-        if not isinstance(d0, types.DictType):
+        if not isinstance(d0, dict):
             raise TypeError("Vector contents must be a dictionary")
 
         self.n = n
         self.values = {}
-        for k in d0.keys():
+        for k in list(d0.keys()):
             self.values[k] = d0[k]
 
     # Insert a new item in sparse vector
     # If index is larger than vector size, adjust vector size
     def __setitem__(self, index, item):
-        if not isinstance(index, types.IntType):
+        if not isinstance(index, int):
             raise KeyError("Index must be integer")
         if index > self.n:
             self.n = index
-        if not operator.isNumberType(item):
+        if not isinstance(item, numbers.Number):
             raise TypeError("Value must be numeric")
         if float(item) != 0.0:
             dict.__setitem__(self.values, index, item)
 
     # Fetch item from sparse vector
     def __getitem__(self, index):
-        if not isinstance(index, types.IntType):
+        if not isinstance(index, int):
             raise KeyError("Index must be integer")
         if index >= self.n:
             raise IndexError("Index out of range")
-        if index in self.keys():
+        if index in list(self.keys()):
             return dict.__getitem__(self.values, index)
         else:
             return 0
 
     # Obtain segment of sparse vector --- treat vector as circular
     def __getslice__(self, i, j):
-        if not isinstance(i, types.IntType) or \
-           not isinstance(j, types.IntType):
+        if not isinstance(i, int) or \
+           not isinstance(j, int):
             raise KeyError("Indices must be integer")
         slice = {}
-        K = self.keys()
+        K = list(self.keys())
         K.sort()
         if i <= j:
             size = j-i
@@ -89,19 +95,19 @@ class SparseVector:
             rv = numpy.zeros(max(self.n, other.shape[0]), 'd')
             for k in range(other.shape[0]):
                 rv[k] = other[k]
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] += self[k]
             return rv
         elif isSparseVector(other):
             rv = SparseVector(max(self.n, other.n), {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] += self[k]
-            for k in other.values.keys():
+            for k in list(other.values.keys()):
                 rv[k] += other[k]
             return rv
-        elif operator.isNumberType(other):
+        elif isinstance(other, numbers.Number):
             rv = SparseVector(self.n, {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k] + other
             return rv
         else:
@@ -120,14 +126,13 @@ class SparseVector:
             return self
         elif isSparseVector(other):
             self.n = max(self.n, other.n)
-            inter = filter(self.values.has_key, other.values.keys())
-            other_only = filter(lambda x: not self.values.has_key,
-                                other.values.keys())
+            inter = list(filter(self.values.has_key, list(other.values.keys())))
+            other_only = [x for x in list(other.values.keys()) if not self.values.has_key]
             for k in inter + other_only:
                 self[k] += other[k]
             return self
-        elif operator.isNumberType(other):
-            for k in self.values.keys():
+        elif isinstance(other, numbers.Number):
+            for k in list(self.values.keys()):
                 self[k] += other
             return self
         else:
@@ -148,14 +153,13 @@ class SparseVector:
             return self
         elif isSparseVector(other):
             self.n = max(self.n, other.n)
-            inter = filter(self.values.has_key, other.values.keys())
-            other_only = filter(lambda x: not self.values.has_key,
-                                other.values.keys())
+            inter = list(filter(self.values.has_key, list(other.values.keys())))
+            other_only = [x for x in list(other.values.keys()) if not self.values.has_key]
             for k in inter + other_only:
                 self.values[k] *= other.values[k]
             return self
-        elif operator.isNumberType(other):
-            for k in self.values.keys():
+        elif isinstance(other, numbers.Number):
+            for k in list(self.values.keys()):
                 self.values[k] *= other
             return self
         else:
@@ -170,14 +174,13 @@ class SparseVector:
             return self
         elif isSparseVector(other):
             self.n = max(self.n, other.n)
-            inter = filter(self.values.has_key, other.values.keys())
-            other_only = filter(lambda x: not self.values.has_key,
-                                other.values.keys())
+            inter = list(filter(self.values.has_key, list(other.values.keys())))
+            other_only = [x for x in list(other.values.keys()) if not self.values.has_key]
             for k in inter + other_only:
                 self[k] /= other.values[k]
             return self
-        elif operator.isNumberType(other):
-            for k in self.values.keys():
+        elif isinstance(other, numbers.Number):
+            for k in list(self.values.keys()):
                 self[k] /= other
             return self
         else:
@@ -186,7 +189,7 @@ class SparseVector:
     def __neg__(self):
         """Element by element opposite."""
         rv = SparseVector(self.n, {})
-        for k in self.values.keys():
+        for k in list(self.values.keys()):
             rv[k] = -self[k]
         return rv
 
@@ -205,17 +208,17 @@ class SparseVector:
         """
         if isinstance(other, numpy.ndarray):
             rv = SparseVector(max(self.n, other.shape[0]), {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k] * other[k]
             return rv
         elif isSparseVector(other):
             rv = SparseVector(max(self.n, other.n), {})
-            for k in filter(self.values.has_key, other.values.keys()):
+            for k in filter(self.values.has_key, list(other.values.keys())):
                 rv[k] = self[k] * other[k]
             return rv
-        elif operator.isNumberType(other):
+        elif isinstance(other, numbers.Number):
             rv = SparseVector(self.n, {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k] * other
             return rv
         else:
@@ -229,17 +232,17 @@ class SparseVector:
         """Element by element division."""
         if isinstance(other, numpy.ndarray):
             rv = SparseVector(max(self.n, other.shape[0]), {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k] / other[k]
             return rv
         elif isSparseVector(other):
             rv = SparseVector(max(self.n, other.n), {})
-            for k in filter(self.values.has_key, other.values.keys()):
+            for k in filter(self.values.has_key, list(other.values.keys())):
                 rv[k] = self[k] / other[k]
             return rv
-        elif operator.isNumberType(other):
+        elif isinstance(other, numbers.Number):
             rv = SparseVector(self.n, {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k] / other
             return rv
         else:
@@ -259,15 +262,15 @@ class SparseVector:
             raise TypeError("Argument must be a SparseVector")
         if isSparseVector(other):
             rv = SparseVector(max(self.n, other.n), {})
-            for k in self.values.keys():
+            for k in list(self.values.keys()):
                 rv[k] = self[k]**other[k]
             return rv
-        if not isinstance(other, types.IntType) and \
-           not isinstance(other, types.LongType) and \
-           not isinstance(other, types.FloatType):
+        if not isinstance(other, int) and \
+           not isinstance(other, int) and \
+           not isinstance(other, float):
                 raise TypeError("Power must be numeric or a sparse vector")
         rv = SparseVector(self.n, {})
-        for k in self.values.keys():
+        for k in list(self.values.keys()):
             rv[k] = math.pow(self[k], other)
         return rv
 
@@ -275,18 +278,18 @@ class SparseVector:
         """Use each element of sparse vector as power of base."""
         if not isSparseVector(self):
             raise TypeError("Argument must be a SparseVector")
-        if not isinstance(other, types.IntType) and \
-           not isinstance(other, types.LongType) and \
-           not isinstance(other, types.FloatType):
+        if not isinstance(other, int) and \
+           not isinstance(other, int) and \
+           not isinstance(other, float):
                 raise TypeError("Power must be numeric")
         rv = SparseVector(self.n, {})
-        for k in self.values.keys():
+        for k in list(self.values.keys()):
             rv[k] = math.pow(other, self[k])
         return rv
 
     def __repr__(self):
         s = 'SparseVector(%-d, {' % self.n
-        for k in self.values.keys():
+        for k in list(self.values.keys()):
             s += '%-d' % k
             s += ' : %-g, ' % self.values[k]
         s += '})'
@@ -295,7 +298,7 @@ class SparseVector:
     def __str__(self):
         nnz = self.nnz()
         s = ' Sparse Vector of size %-d, %-d nonzeros\n' % (self.size(), nnz)
-        K = self.values.keys()
+        K = list(self.values.keys())
         K.sort()
         s += ' Values:\n'
         for k in K:
@@ -306,7 +309,7 @@ class SparseVector:
 
     def keys(self):
         """Return keys."""
-        return self.values.keys()
+        return list(self.values.keys())
 
     def size(self):
         """Return vector size."""
@@ -324,7 +327,7 @@ class SparseVector:
         """
         if m < self.n:
             # Drop all elements beyon m
-            for k in self.keys():
+            for k in list(self.keys()):
                 if k >= m:
                     self.values.__delitem__(k)
         else:
@@ -338,7 +341,7 @@ class SparseVector:
         """Convert sparse vector to (dense) list."""
         rv = []
         for k in range(self.n):
-            if k in self.values.keys():
+            if k in list(self.values.keys()):
                 rv.append(self.values[k])
             else:
                 rv.append(0.0)
@@ -352,13 +355,13 @@ class SparseVector:
             raise ImportError("Unable to import module numpy")
             return None
         rv = numpy.zeros(self.n, 'd')
-        for k in self.values.keys():
+        for k in list(self.values.keys()):
             rv[k] = self.values[k]
         return rv
 
     def out(self):
         """Printable representation."""
-        print self
+        print(self)
         return
 
 ###############################################################################
@@ -379,7 +382,7 @@ def ones(n, indlist=None):
     (default: range(n)).
     """
     if indlist is None:
-        indlist = range(n)
+        indlist = list(range(n))
     rv = SparseVector(n, {})
     for k in indlist:
         rv.values[k] = 1
@@ -398,8 +401,8 @@ def random(n, lmin=0.0, lmax=1.0, indlist=None):
     dl = lmax-lmin
     rv = SparseVector(n, {})
     if indlist is None:
-        nval = max(5, n/100)
-        indlist = random.sample(xrange(n), nval)
+        nval = max(5, n // 100)
+        indlist = random.sample(range(n), nval)
     for k in indlist:
         rv.values[k] = dl * gen.random()
     return rv
@@ -408,7 +411,7 @@ def random(n, lmin=0.0, lmax=1.0, indlist=None):
 def dotss(a, b):
     """dot product of two sparse vectors."""
     dotproduct = 0.
-    for k in filter(a.values.has_key, b.values.keys()):
+    for k in filter(a.values.has_key, list(b.values.keys())):
         dotproduct += a[k] * b[k]
     return dotproduct
 
@@ -416,7 +419,7 @@ def dotss(a, b):
 def dotsn(a, b):
     """dot product of a sparse vector and numpy array."""
     dotproduct = 0.
-    for k in a.keys():
+    for k in list(a.keys()):
         dotproduct += a[k] * b[k]
     return dotproduct
 
@@ -449,12 +452,12 @@ def norm2(a):
 
 def norm1(a):
     """Compute the 1-norm of vector a."""
-    return sum([abs(a.values[k]) for k in a.values.keys()])
+    return sum([abs(a.values[k]) for k in list(a.values.keys())])
 
 
 def norm_infty(a):
     """Compute the infinity-norm of vector a."""
-    return max([abs(a.values[k]) for k in a.values.keys()])
+    return max([abs(a.values[k]) for k in list(a.values.keys())])
 
 
 def normp(a, p):
@@ -465,14 +468,14 @@ def normp(a, p):
         return norm1(a)
     if p == 2:
         return norm2(a)
-    return sum([abs(a.values[k])**p for k in a.values.keys()])**(1.0/p)
+    return sum([abs(a.values[k])**p for k in list(a.values.keys())])**(1/p)
 
 
 def sum(a):
     """Return the sum of the elements of a."""
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
-    return sum([a.values[k] for k in a.values.keys()])
+    return sum([a.values[k] for k in list(a.values.keys())])
 
 
 # elementwise operations
@@ -481,7 +484,7 @@ def log10(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.log10(a.values[k])
     return rv
 
@@ -491,7 +494,7 @@ def log(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.log(a.values[k])
     return rv
 
@@ -501,7 +504,7 @@ def exp(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.exp(a.values[k])
     return rv
 
@@ -511,7 +514,7 @@ def sin(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.sin(a.values[k])
     return rv
 
@@ -521,7 +524,7 @@ def tan(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.tan(a.values[k])
     return rv
 
@@ -531,7 +534,7 @@ def cos(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.cos(a.values[k])
     return rv
 
@@ -541,7 +544,7 @@ def asin(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.asin(a.values[k])
     return rv
 
@@ -551,7 +554,7 @@ def atan(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.atan(a.values[k])
     return rv
 
@@ -561,7 +564,7 @@ def acos(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.acos(a.values[k])
     return rv
 
@@ -571,7 +574,7 @@ def sqrt(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.sqrt(a.values[k])
     return rv
 
@@ -581,7 +584,7 @@ def sinh(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.sinh(a.values[k])
     return rv
 
@@ -591,7 +594,7 @@ def tanh(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.tanh(a.values[k])
     return rv
 
@@ -601,7 +604,7 @@ def cosh(a):
     if not isSparseVector(a):
         raise TypeError("Argument must be a SparseVector")
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.cosh(a.values[k])
     return rv
 
@@ -612,7 +615,7 @@ def atan2(a, b):
         raise TypeError("Argument must be a SparseVector")
 
     rv = SparseVector(a.n, {})
-    for k in a.values.keys():
+    for k in list(a.values.keys()):
         rv.values[k] = math.atan2(a.values[k], b)
     return rv
 
@@ -624,80 +627,80 @@ def atan2(a, b):
 
 if __name__ == "__main__":
 
-    print 'a = zeros(4)'
+    print('a = zeros(4)')
     a = zeros(4)
 
-    print 'a.__doc__=', a.__doc__
+    print('a.__doc__=', a.__doc__)
 
-    print 'a[0] = 1.0'
+    print('a[0] = 1.0')
     a[0] = 1.0
 
-    print 'a[3] = 3.0'
+    print('a[3] = 3.0')
     a[3] = 3.0
 
-    print 'a[0]=', a[0]
-    print 'a[1]=', a[1]
+    print('a[0]=', a[0])
+    print('a[1]=', a[1])
 
-    print 'a.size()=', a.size()
+    print('a.size()=', a.size())
 
     b = SparseVector(4, {0: 1, 1: 2, 2: 3, 3: 4})
-    print 'a=', a
-    print 'b=', b
+    print('a=', a)
+    print('b=', b)
 
-    print 'a+b'
+    print('a+b')
     c = a + b
     c.out()
 
-    print '-a'
+    print('-a')
     c = -a
     c.out()
 
-    print 'a-b'
+    print('a-b')
     c = a - b
     c.out()
 
-    print 'a*1.2'
+    print('a*1.2')
     c = a*1.2
     c.out()
 
-    print '1.2*a'
+    print('1.2*a')
     c = 1.2*a
     c.out()
 
-    print 'dot(a,b) = ', dot(a, b)
-    print 'dot(b,a) = ', dot(b, a)
+    print('dot(a,b) = ', dot(a, b))
+    print('dot(b,a) = ', dot(b, a))
 
-    print 'a*b'
+    print('a*b')
     c = a*b
     c.out()
 
-    print 'a/1.2'
+    print('a/1.2')
     c = a/1.2
     c.out()
 
-    print 'a[0:2]'
+    print('a[0:2]')
     c = a[0:2]
     c.out()
 
-    print 'sqrt(a)=', sqrt(a)
-    print 'pow(a, 2*ones(a.size()))=', pow(a, 2*ones(a.size()))
-    print 'pow(a, 2)=', pow(a, 2)
+    print('sqrt(a)=', sqrt(a))
+    print('pow(a, 2*ones(a.size()))=', pow(a, 2*ones(a.size())))
+    print('pow(a, 2)=', pow(a, 2))
 
-    print 'ones(10)'
+    print('ones(10)')
     c = ones(10)
     c.out()
 
-    print 'zeros(10)'
+    print('zeros(10)')
     c = zeros(10)
     c.out()
 
-    print 'del a'
+    print('del a')
     del a
 
-    print 'a = random(11, 0., 2.)'
+    print('a = random(11, 0., 2.)')
     try:
         a = random(11, 0., 2.)
         a.out()
     except:
-        print '   failed!'
+        print('   failed!')
         pass

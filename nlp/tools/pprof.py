@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 u"""A module to create and plot performance profiles.
 
 Performance profiles are implemented as described in
@@ -7,7 +6,11 @@ Performance profiles are implemented as described in
     performance profiles*, Mathematical Programming, Series B, 91:201–213,
     2002.
 """
+from __future__ import division
 
+from builtins import map
+from builtins import range
+from builtins import object
 import re
 from string import atof
 import numpy as np
@@ -49,7 +52,7 @@ class PerformanceProfile(object):
         self.metrics = []       # A list of lists.
         self.ratios = None
 
-        map(self.add_solver, solvers)
+        list(map(self.add_solver, solvers))
         self.compute_ratios()
 
     def add_solver(self, fname):
