@@ -12,8 +12,11 @@ CQP will try to minimize the quadratic approximation at the initial point.
 from cutest.model.cutestmodel import CUTEstModel
 from nlp.model.qpmodel import QPModel, LSQModel
 from nlp.model.nofixedvars import NoFixedVarsModel
+from nlp.optimize.cqp import RegQPInteriorPointSolver2x2
+from nlp.optimize.cqp import RegQPInteriorPointSolver
 from nlp.optimize.cqp import RegQPInteriorPointSolver2x2QR
 from nlp.optimize.cqp import RegQPInteriorPointSolverQR
+from nlp.optimize.cqp import RegQPInteriorPointSolverLSMR
 from nlp.tools.logs import config_logger
 import numpy as np
 import logging
@@ -48,6 +51,23 @@ parser.set_defaults(use_pc=True)
 parser.add_argument("--use_scale", type=str, default="none", choices=["none","abs","mc29"],
     help="Choose no scaling (default), scaling based on the Jacobian values (abs), or use MC29 to compute factors (mc29)")
 
+parser.add_argument("--use_LDL", dest='use_QR', action='store_false',
+    help="Use the LDL^T factorization to solve the linear system (default)")
+parser.add_argument("--use_QR", dest='use_QR', action='store_true',
+    help="Use the QR factorization to solve the linear system")
+parser.add_argument("--use_LSMR", dest='use_LSMR', action='store_true', 
+    help="Use the iterative method LSMR to solve the linear system")
+parser.set_defaults(use_QR=False)
+parser.set_defaults(use_LSMR=False)
+
+parser.add_argument("--fac_stats", dest='fac_stats', action='store_true',
+    help="Output the matrix factorization statistics")
+parser.set_defaults(fac_stats=False)
+
+parser.add_argument("--no_lsq", dest='no_lsq', action='store_true',
+    help="Do not convert equality constraints to a least-squares term")
+parser.set_defaults(no_lsq=False)
+
 parser.add_argument("--use_K2", dest='use_K2', action='store_true',
     help="Use the 2x2 block linear system instead of the (default) 3x3 system")
 parser.add_argument("--use_K3", dest='use_K2', action='store_false',
@@ -68,6 +88,10 @@ parser.set_defaults(extra_scale=False)
 
 parser.add_argument("--nitref", type=int, default=1,
     help="Maximum number of iterative refinements to apply in the linear solve.")
+
+parser.add_argument("--long_fobj", dest='long_fobj', action='store_true',
+    help="Output the final objective to many decimal places")
+parser.set_defaults(long_fobj=False)
 
 args = parser.parse_args()
 
@@ -100,8 +124,8 @@ for name in args.name_list:
         name = name[:-4]
 
     prob = CUTEstModel(name)
-    prob.compute_scaling_obj()
-    prob.compute_scaling_cons()
+    # prob.compute_scaling_obj()
+    # prob.compute_scaling_cons()
 
     # Remove the fixed variables, if any
     if prob.nfixedB > 0:
@@ -110,17 +134,34 @@ for name in args.name_list:
         modprob = prob
 
     # Test either the standard QP or the least-squares version
-    # qp = QPModel(fromProb=(modprob,None,None))
-    qp = LSQModel(fromProb=(modprob,None,None))
-
-    if args.use_K2:
-        cqp = RegQPInteriorPointSolver2x2QR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
-            primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
-            extra_scale=args.extra_scale, itref_max=args.nitref)
+    if args.no_lsq:
+        qp = QPModel(fromProb=(modprob,None,None))
     else:
-        cqp = RegQPInteriorPointSolverQR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
-            primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
-            extra_scale=args.extra_scale, itref_max=args.nitref)
+        qp = LSQModel(fromProb=(modprob,None,None))
+
+    if args.use_QR:
+        # Use the QR solver
+        if args.use_K2:
+            cqp = RegQPInteriorPointSolver2x2QR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+                primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
+                extra_scale=args.extra_scale, itref_max=args.nitref)
+        else:
+            cqp = RegQPInteriorPointSolverQR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+                primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
+                extra_scale=args.extra_scale, itref_max=args.nitref)
+    else:
+        if args.use_LSMR:
+            cqp = RegQPInteriorPointSolverLSMR(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+                primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, primal_solve=args.primal_solve,
+                extra_scale=args.extra_scale, itref_max=args.nitref)
+        else:
+            # Use the regular LDL^T solver
+            if args.use_K2:
+                cqp = RegQPInteriorPointSolver2x2(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+                    primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, itref_max=args.nitref)
+            else:
+                cqp = RegQPInteriorPointSolver(qp, mehrotra_pc=args.use_pc, scale_type=args.use_scale,
+                    primal_reg_min=1.0e-8, dual_reg_min=1.0e-8, itref_max=args.nitref)        
 
     # Solve the problem and print the result
     try:
@@ -131,7 +172,19 @@ for name in args.name_list:
         msg = sys.exc_info()[1].message
         status = msg if len(msg) > 0 else "xfail"  # unknown failure
         niter, fcalls, gcalls, kktRes, tsolve = cqp_stats(cqp)
+        # Reset for case of xfail
+        niter = -1
+        tsolve = -1.0
 
     logger.info("%9s %5d %5d %6d %8.1e %8.1e %6d %6d %5s %7.3f",
             prob.name, prob.nvar, prob.ncon, niter, cqp.qpObj, kktRes,
             fcalls, gcalls, status, tsolve)
+
+    if args.fac_stats:
+        if args.use_QR:
+            logger.info("%s, %s"%(qp.name, cqp.lin_solver.factorization_statistics))
+        else:
+            logger.info("%s, Number of nonzeros = %d"%(qp.name, cqp.lin_solver.nzFact))
+
+    if args.long_fobj:
+        logger.info("Long objective value = %20.16e"%(cqp.qpObj))

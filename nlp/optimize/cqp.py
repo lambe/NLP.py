@@ -19,11 +19,50 @@ from qr_mumps.solver import QRMUMPSSolver
 from nlp.model.qpmodel import QPModel, LSQModel
 from nlp.model.snlp import SlackModel
 from pysparse.sparse import PysparseMatrix
-from pykrylov.linop.linop import PysparseLinearOperator
+from pykrylov.linop.linop import LinearOperator, PysparseLinearOperator, ShapeError
+from pykrylov.lls.lsmr import LSMRFramework
+# from pykrylov.lls.lsqr import LSQRFramework
 from nlp.tools.norms import norm2, norm_infty, normest
 from nlp.tools.timing import cputime
 import logging
 import numpy as np
+import pdb
+
+def PysparseTransposeLinearOperator(A_Transpose):
+    "Return the A linear operator from a Pysparse sparse matrix in a transposed form."
+
+    nargin, nargout = A_Transpose.shape
+    try:
+        symmetric = A_Transpose.issym
+    except:
+        symmetric = A_Transpose.isSymmetric()
+
+    def matvec_transp(x):
+        # pdb.set_trace()
+        if x.shape != (nargout,):
+            msg = 'Input has shape ' + str(x.shape)
+            msg += ' instead of (%d,)' % nargin
+            raise ShapeError(msg)
+        if hasattr(A_Transpose, '__mul__'):
+            return A_Transpose*x
+        Ax = np.empty(nargin)
+        A_Transpose.matvec(x, Ax)
+        return Ax
+
+    def matvec(y):
+        # pdb.set_trace()
+        if y.shape != (nargin,):
+            msg = 'Input has shape ' + str(y.shape)
+            msg += ' instead of (%d,)' % nargout
+            raise ShapeError(msg)
+        if hasattr(A_Transpose, '__rmul__'):
+            return y*A_Transpose
+        ATy = np.empty(nargout)
+        A_Transpose.matvec_transp(y, ATy)
+        return ATy
+
+    return LinearOperator(nargin, nargout, matvec=matvec,
+                          matvec_transp=matvec_transp, symmetric=symmetric)
 
 
 class RegQPInteriorPointSolver(object):
@@ -1429,7 +1468,9 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
                 verbose=False)
 
+        # pdb.set_trace()
         self.lin_solver.analyze('metis')
+        # self.lin_solver.analyze('scotch')
 
         return
 
@@ -1562,6 +1603,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
         # Get the solution and residual vectors
         # delta_x, res_vec, _ = self.lin_solver.solve(self.rhs, compute_residuals=True)
         # delta_x, res_vec, _ = self.lin_solver.seminormal_solve(self.rhs, compute_residuals=True)
+        pdb.set_trace()
         delta_x = self.lin_solver.seminormal_solve_mini(rhs_sn)
         if self.primal_solve:
             res_vec = self.rhs - self.K*delta_x
@@ -1666,6 +1708,154 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             zU = (self.zU**0.5)*self.soln_vec[n+p+m+nl:].copy()
 
         return x,r,y,zL,zU
+
+
+class RegQPInteriorPointSolverLSMR(RegQPInteriorPointSolverQR):
+    u"""A regularized interior-point method using the LSMR iterative method.
+
+    Note that this solver only works for convex quadratic problems that have
+    a diagonal Hessian; linear and least-squares problems are solved as well.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Instantiate a regularized primal-dual IP solver for problem ``qp``.
+        """
+        super(RegQPInteriorPointSolverLSMR, self).__init__(*args, **kwargs)
+
+        # Set a base solve tolerance for the LSMR iterative method
+        self.lsmr_tol_init = kwargs.get('lsmr_tol_init', 1.e-12)
+        self.lsmr_tol = self.lsmr_tol_init
+        self.lsmr_iter_max = kwargs.get('lsmr_iter_max', 2000)
+
+    def initialize_linear_solver(self):
+        """Set up the linear solver, given the constructed matrix."""
+
+        if self.primal_solve:
+            # nrow = self.sys_size + self.n
+            # ncol = self.n
+            self.KOp = PysparseLinearOperator(self.K)
+            self.lin_solver = LSMRFramework(self.KOp)
+            # kval, krow, kcol = self.K.find()
+
+            # self.lin_solver = QRMUMPSSolver((nrow, ncol, krow, kcol, kval),
+            #     verbose=False)
+
+            # ** Create LSMR solver object here **
+            # ** Need linear operator object for Pysparse matvecs **
+
+        else:
+            # nrow = self.sys_size + self.n
+            # ncol = self.sys_size
+            self.KOp = PysparseTransposeLinearOperator(self.K)
+            self.lin_solver = LSMRFramework(self.KOp)
+            # kval, krow, kcol = self.K.find()
+
+            # *** DEV NOTE: rows and columns swapped because we cannot construct
+            # the transpose matrix directly in Pysparse (which we would like)
+            # self.lin_solver = QRMUMPSSolver((nrow, ncol, kcol, krow, kval),
+            #     verbose=False)
+
+            # ** Create LSMR solver object here **
+            # ** Need linear operator object for Pysparse matvecs **
+
+        return
+
+    def solve_system(self, **kwargs):
+        """Solve the linear system with LSMR."""
+
+        # Compute solution and residual vectors with LSMR
+        pdb.set_trace()
+        self.soln_vec = np.zeros(self.sys_size + self.n)
+        soln_tuple = self.lin_solver.solve(self.rhs, atol=self.lsmr_tol, btol=self.lsmr_tol, 
+                                           etol=self.lsmr_tol, itnlim=None, show=False)
+        delta_x = soln_tuple[0]
+
+        if self.primal_solve:
+            res_vec = self.rhs - self.K*delta_x
+        else:
+            mod = delta_x*self.K
+            res_vec = self.rhs - mod.reshape(self.sys_size + self.n)
+
+        # (This is the same as the main QR solver)
+        if self.primal_solve:
+            if self.extra_scale:
+                self.soln_vec[:self.n] = (1./self.K_diag_11)*delta_x
+            else:
+                self.soln_vec[:self.n] = delta_x
+            self.soln_vec[self.n:] = (-1./self.K_diag_22)*res_vec[:self.sys_size]
+        else:
+            self.soln_vec[:self.n] = (1./self.K_diag_11)*res_vec[:self.n]
+            if self.extra_scale:
+                self.soln_vec[self.n:] = (1./self.K_diag_22)*delta_x
+            else:
+                self.soln_vec[self.n:] = delta_x
+
+        # Compute the SQD system residual using the computed solution vector
+        # ** NOTE: RHS has been scaled, need original RHS for baseline **
+        new_rhs = self.rhs_cp.copy()
+        new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+        new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+        # # Perform repeated iterative refinement if necessary to obtain
+        # # an accurate step
+        # itref = 0
+        # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+        # new_norm = np.dot(new_rhs, new_rhs)**0.5
+        # while new_norm / old_norm > self.lsmr_tol and itref < self.itref_max:
+        #     # Apply appropriate scaling to updated RHS
+        #     if self.primal_solve:
+        #         temp_vec = new_rhs[:self.n].copy()
+        #         new_rhs[:self.sys_size] = new_rhs[self.n:]
+        #         new_rhs[self.sys_size:] = temp_vec
+
+        #         new_rhs[:self.sys_size] *= 1./self.K_diag_22
+        #         new_rhs[self.sys_size:] *= 1./self.K_diag_11
+
+        #     else:
+        #         new_rhs[:self.n] *= 1./self.K_diag_11
+        #         new_rhs[self.n:] *= -1./self.K_diag_22
+
+        #     # New linear solve 
+        #     soln_tuple = self.lin_solver.solve(self.rhs, atol=self.lsmr_tol, btol=self.lsmr_tol, 
+        #                                        etol=self.lsmr_tol, itnlim=None, show=False)
+        #     delta_x = soln_tuple[0]
+        #     if self.primal_solve:
+        #         res_vec = new_rhs - self.K*delta_x
+        #     else:
+        #         mod = delta_x*self.K
+        #         res_vec = new_rhs - mod.reshape(self.sys_size + self.n)
+
+        #     # Apply refinement step and check norms again
+        #     if self.primal_solve:
+        #         if self.extra_scale:
+        #             self.soln_vec[:self.n] += (1./self.K_diag_11)*delta_x
+        #         else:
+        #             self.soln_vec[:self.n] += delta_x
+        #         self.soln_vec[self.n:] += (-1./self.K_diag_22)*res_vec[:self.sys_size]
+        #     else:
+        #         self.soln_vec[:self.n] += (1./self.K_diag_11)*res_vec[:self.n]
+        #         if self.extra_scale:
+        #             self.soln_vec[self.n:] += (1./self.K_diag_22)*delta_x
+        #         else:
+        #             self.soln_vec[self.n:] += delta_x
+
+        #     new_rhs = self.rhs_cp.copy()
+        #     new_rhs[:self.n] -= self.K_diag_11**2*self.soln_vec[:self.n] + self.soln_vec[self.n:]*self.K_block
+        #     new_rhs[self.n:] += self.K_diag_22**2*self.soln_vec[self.n:] - self.K_block*self.soln_vec[:self.n]
+
+        #     pdb.set_trace()
+
+        #     # old_norm = np.dot(self.rhs_cp, self.rhs_cp)**0.5
+        #     new_norm = np.dot(new_rhs, new_rhs)**0.5
+        #     itref += 1
+
+        return
+
+    def check_optimality(self):
+        """Same as parent class, but update the LSMR solve tolerance."""
+        new_kktRes = super(RegQPInteriorPointSolverQR, self).check_optimality()
+        self.lsmr_tol = min(self.lsmr_tol, new_kktRes)
+        return new_kktRes
 
 
 class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
