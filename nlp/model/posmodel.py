@@ -4,6 +4,7 @@
 from builtins import range
 import numpy as np
 from nlp.model.nlpmodel import NLPModel
+from nlp.tools.linop import ReducedLinearOperator
 
 __docformat__ = 'restructuredtext'
 

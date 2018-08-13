@@ -14,6 +14,7 @@ from scipy.sparse.linalg import aslinearoperator
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.qnmodel import QuasiNewtonModel
 from nlp.tools import sparse_vector_class as sv
+from nlp.tools.linop import ReducedLinearOperator
 
 import tempfile
 import os

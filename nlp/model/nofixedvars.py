@@ -3,10 +3,11 @@
 
 from builtins import range
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import LinearOperator
 from nlp.model.nlpmodel import NLPModel
-from pykrylov.linop.linop import LinearOperator, ReducedLinearOperator
-from pykrylov.linop.linop import SymmetricallyReducedLinearOperator
-from pysparse.sparse import PysparseMatrix as psp
+from nlp.tools.linop import ReducedLinearOperator, \
+    SymmetricallyReducedLinearOperator
 
 __docformat__ = 'restructuredtext'
 
@@ -95,7 +96,7 @@ class NoFixedVarsModel(NLPModel):
         """Whatever the Jacobian is, it needs the right dimensions."""
         self.compose_x(x)
         J = self.model.jac(self._x_all, **kwargs)
-        if isinstance(J,LinearOperator):
+        if isinstance(J, LinearOperator):
             return ReducedLinearOperator(J,self._all_cons,self._ind_notfixed)
         else:
             return J[:,self._ind_notfixed]
@@ -115,36 +116,12 @@ class NoFixedVarsModel(NLPModel):
         """Whatever the Hessian is, it needs the right dimensions."""
         self.compose_x(x)
         H = self.model.hess(self._x_all, z, **kwargs)
-        if isinstance(H,LinearOperator):
+        if isinstance(H, LinearOperator):
             return SymmetricallyReducedLinearOperator(H, self._ind_notfixed)
-        elif isinstance(H,psp):
-            # NOTE: due to a bug in Pysparse, this code is rather complicated.
-            # Ideally, we would like to do the same slicing as with Numpy,
-            # i.e. return H[self._ind_notfixed, self._ind_notfixed]
-            # However, the returned matrix is not symmetric, so this causes
-            # an error when slack variables are added to the problem.
-            #
-            # The following code represents a workaround
-            vals,irow,jcol = H.find()
-            # Remove elements corresponding to fixed variables
-            mask = np.ones(vals.size, dtype=bool)
-            for ind in self._ind_fixed:
-                row_mask = irow != ind
-                col_mask = jcol != ind
-                mask = np.logical_and(mask, np.logical_and(row_mask, col_mask))
-            new_vals = vals[mask]
-            new_irow = irow[mask]
-            new_jcol = jcol[mask]
-            # Adjust index values based on number of fixed variables removed
-            for k in range(new_vals.size):
-                new_irow[k] -= (new_irow[k] > self._ind_fixed).sum()
-                new_jcol[k] -= (new_jcol[k] > self._ind_fixed).sum()
-            # Populate a new sparse matrix of appropriate size
-            new_H = psp(size=self.n, sizeHint=new_vals.size, symmetric=True)
-            new_H.put(new_vals, new_irow, new_jcol)
-            return new_H
+        elif sp.isspmatrix(H):
+            return H[tuple(np.meshgrid(self._ind_notfixed, self._ind_notfixed))]
         else:
-            return H[self._ind_notfixed, self._ind_notfixed]
+            return H[tuple(np.meshgrid(self._ind_notfixed, self._ind_notfixed))]
 
     def hprod(self, x, z, p, **kwargs):
         if z is None:

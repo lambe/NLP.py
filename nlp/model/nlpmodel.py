@@ -741,6 +741,7 @@ class SparseNLPModel(NLPModel):
         zero-length arrays from jac_triple()."""
         vals, rows, cols = self.jac_triple(x, **kwargs)
         J = sp.coo_matrix((vals, (rows, cols)), shape=(self.ncon, self.nvar))
+        J = J.tocsr()
         return J
 
     def jprod(self, x, p, **kwargs):
@@ -759,6 +760,7 @@ class SparseNLPModel(NLPModel):
         """Evaluate Lagrangian Hessian at (x, z)."""
         vals, rows, cols = self.hess_triple(x, z, **kwargs)
         H = sp.coo_matrix((vals, (rows, cols)), shape=(self.nvar, self.nvar))
+        H = H.tocsr()
         return H
 
     def hprod(self, x, z, p, **kwargs):

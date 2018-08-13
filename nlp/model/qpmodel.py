@@ -4,10 +4,11 @@
 from builtins import range
 import logging
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import LinearOperator
 from nlp.model.kkt import KKTresidual
 from nlp.model.nlpmodel import NLPModel
-from pysparse.sparse import PysparseMatrix
-from pykrylov.linop.linop import LinearOperator, ReducedLinearOperator
+from nlp.tools.linop import ReducedLinearOperator
 
 
 class QPModel(NLPModel):
@@ -65,12 +66,12 @@ class QPModel(NLPModel):
                 m = 0
                 if isinstance(H, np.ndarray):
                     A = np.zeros([0,n], dtype=np.float)
-                elif isinstance(H, PysparseMatrix):
-                    A = PysparseMatrix(nrow=0, ncol=n, sizeHint=0, symmetric=False)
+                elif sp.isspmatrix(H):
+                    A = sp.coo_matrix((0, n))
                 elif isinstance(H, LinearOperator):
-                    A = LinearOperator(n, 0,
-                                       lambda x: np.empty((0, 1)),
-                                       matvec_transp=lambda y: np.empty((n, 0)),
+                    A = LinearOperator((n, 0),
+                                       matvec=lambda x: np.empty((0, 0)),
+                                       rmatvec=lambda y: np.empty((n, 0)),
                                        dtype=np.float)
                 else:
                     raise ValueError('H has unrecognized type')
@@ -316,15 +317,15 @@ class LSQModel(QPModel):
             if isinstance(old_A, np.ndarray):
                 C = old_A[eq,:].copy()
                 A = old_A[ineq,:].copy()
-            elif isinstance(old_A, PysparseMatrix):
-                C = old_A[eq,:].copy()              # Check copy syntax
+            elif sp.isspmatrix(old_A):
+                C = old_A[eq,:].copy()
                 A = old_A[ineq,:].copy()
                 nnzc = C.nnz
             elif isinstance(old_A, LinearOperator):
                 # Use reduced linear operators with appropriate masks
                 all_x = np.arange(n, dtype=np.int)
-                C = ReducedLinearOperator(old_A,eq,all_x)
-                A = ReducedLinearOperator(old_A,ineq,all_x)
+                C = ReducedLinearOperator(old_A, eq, all_x)
+                A = ReducedLinearOperator(old_A, ineq, all_x)
             else:
                 raise ValueError('A has unrecognized type')
 

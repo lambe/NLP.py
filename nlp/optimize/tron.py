@@ -11,7 +11,6 @@ from __future__ import division
 from builtins import object
 import logging
 import numpy as np
-from pykrylov.linop import SymmetricallyReducedLinearOperator as ReducedHessian
 
 from nlp.model.nlpmodel import QPModel
 from nlp.model.linemodel import C1LineModel
@@ -19,6 +18,7 @@ from nlp.ls.linesearch import ArmijoLineSearch
 from nlp.tr.trustregion import TrustRegionSolver
 from nlp.tr.trustregion import GeneralizedTrustRegion
 from nlp.tools import norms
+from nlp.tools.linop import SymmetricallyReducedLinearOperator as ReducedHessian
 from nlp.tools.utils import where, projected_gradient_norm2, \
                             project, projected_step, breakpoints
 from nlp.tools.timing import cputime
