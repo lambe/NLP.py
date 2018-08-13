@@ -3,9 +3,9 @@
 
 from builtins import range
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import LinearOperator
 from nlp.model.nlpmodel import NLPModel
-from pysparse.sparse import PysparseMatrix as psp
-from pykrylov.linop.linop import LinearOperator
 
 __docformat__ = 'restructuredtext'
 
@@ -262,15 +262,16 @@ class SlackModel(NLPModel):
             new_J[upperC, self.sU] = -1.
             new_J[rangeC, self.sR] = -1.
 
-        elif isinstance(J, psp):
-            # Create a new Pysparse matrix and populate
+        elif sp.isspmatrix(J):
+            # Create a new sparse matrix and populate
             nnzJ = self.model.nnzj + m
-            new_J = psp(nrow=m, ncol=n, sizeHint=nnzJ)
+            new_J = sp.lil_matrix(J, shape=(m, n))
 
-            new_J[:, :on] = J
-            new_J.put(-1.0, lowerC, self.sL)
-            new_J.put(-1.0, upperC, self.sU)
-            new_J.put(-1.0, rangeC, self.sR)
+            new_J[lowerC, self.sL] = -1.
+            new_J[upperC, self.sU] = -1.
+            new_J[rangeC, self.sR] = -1.
+
+            new_J = new_J.tocsr()
 
         elif isinstance(J, LinearOperator):
             # Create a new linear operator calling the SlackModel jprod() and
@@ -332,10 +333,9 @@ class SlackModel(NLPModel):
             new_C = np.zeros([p,n])
             new_C[:, :on] = C
 
-        elif isinstance(C, psp):
+        elif sp.isspmatrix(C):
             # Create a larger Pysparse matrix and populate
-            new_C = psp(nrow=p, ncol=n, sizeHint=model.nnzc)
-            new_C[:, :on] = C
+            new_C = sp.csr_matrix(C, shape=(p, n))
 
         elif isinstance(C, LinearOperator):
             # Create a new linear operator calling the SlackModel jprod() and
@@ -349,10 +349,9 @@ class SlackModel(NLPModel):
 
     def lsq_jop(self, x):
         """Obtain the updated least-squares Jacobian as a linear operator."""
-        return LinearOperator(self.n, self.model.p,
-                              lambda v: self.lsq_jprod(x,v),
-                              matvec_transp=lambda u: self.lsq_jtprod(x,u),
-                              symmetric=False,
+        return LinearOperator((self.n, self.model.p),
+                              matvec=lambda v: self.lsq_jprod(x,v),
+                              rmatvec=lambda u: self.lsq_jtprod(x,u),
                               dtype=np.float)
 
     def hprod(self, x, y, v, **kwargs):
@@ -385,11 +384,9 @@ class SlackModel(NLPModel):
             new_H = np.zeros([n,n])
             new_H[:on, :on] = H
 
-        elif isinstance(H, psp):
-            # Create a new pysparse matrix and populate
-            new_H = psp(nrow=self.n, ncol=self.n, symmetric=True,
-                sizeHint=model.nnzh)
-            new_H[:on, :on] = H
+        elif sp.isspmatrix(H):
+            # Create a new sparse matrix and populate
+            new_H = sp.csr_matrix(H, shape=(n, n))
 
         elif isinstance(H, LinearOperator):
             # Create a new linear operator calling the SlackModel hprod()
