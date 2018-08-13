@@ -1,4 +1,5 @@
 """Models where derivatives are computed by ADOL-C."""
+from __future__ import print_function
 
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.qnmodel import QuasiNewtonModel
@@ -9,7 +10,7 @@ import numpy as np
 try:
     import adolc
 except:
-    print "ADOL-C is not installed"
+    print("ADOL-C is not installed")
 
 
 class AdolcModel(NLPModel):

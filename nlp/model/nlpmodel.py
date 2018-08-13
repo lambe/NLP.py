@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Abstract base classes to represent continuous optimization models."""
+from __future__ import division
 
+from builtins import str
+from builtins import range
+from builtins import object
 import logging
 import os
 import sys
@@ -91,7 +95,7 @@ class NLPModel(object):
 
         # Default classification of constraints
         self._lin = []                        # Linear    constraints
-        self._nln = range(self._m)            # Nonlinear constraints
+        self._nln = list(range(self._m))      # Nonlinear constraints
         self._net = []                        # Network   constraints
         self._nlin = len(self.lin)            # Number of linear constraints
         self._nnln = len(self.nln)            # Number of nonlinear constraints
@@ -350,7 +354,7 @@ class NLPModel(object):
         gmaxNorm = 0            # holds the maximum row-norm of J
         imaxNorm = 0            # holds the corresponding index
         e = np.zeros(self.ncon)
-        for i in xrange(m):
+        for i in range(m):
             e[i] = 1
             giNorm = np.linalg.norm(J.T * e, np.inf)
             e[i] = 0
@@ -461,7 +465,7 @@ class NLPModel(object):
         nuC = self.nupperC
         nrC = self.nrangeC
 
-        not_eC = lC + uC + rC + range(nlC + nuC + nrC, nlC + nuC + nrC + nrC)
+        not_eC = lC + uC + rC + list(range(nlC + nuC + nrC, nlC + nuC + nrC + nrC))
         if c is None:
             c = self.cons_pos(x)
 

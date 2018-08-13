@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from __future__ import division
+from builtins import range
 from nlp.model import NLPModel
 from pysparse.sparse import spmatrix
 from pysparse.sparse.pysparseMatrix import PysparseMatrix as sp
@@ -890,7 +892,7 @@ class L1BarrierMeritFunction(NLPModel):
         _JCYJ = spmatrix.symdot(J.matrix, yz / c)
         JCYJ = sp(matrix=_JCYJ)
         Hbar += JCYJ
-        r1 = range(n, self.n - 1)
+        r1 = list(range(n, self.n - 1))
         Hbar.addAt(uv / st, r1, r1)
         return Hbar
 

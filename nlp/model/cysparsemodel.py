@@ -1,8 +1,10 @@
+from __future__ import print_function
+from builtins import range
 try:
     from cysparse.sparse.ll_mat import LLSparseMatrix
     import cysparse.common_types.cysparse_types as types
 except:
-    print "CySparse is not installed!"
+    print("CySparse is not installed!")
 
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.snlp import SlackModel

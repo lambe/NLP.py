@@ -1,10 +1,12 @@
 """Models where sparse matrices are returned in PySparse format."""
+from __future__ import print_function
 
 
+from builtins import range
 try:
     from pysparse.sparse import PysparseMatrix as psp
 except:
-    print "PySparse is not installed!"
+    print("PySparse is not installed!")
 
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.snlp import SlackModel

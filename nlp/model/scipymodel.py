@@ -1,5 +1,6 @@
 """Models with sparse matrices in SciPy coordinate (COO) format."""
 
+from builtins import range
 from scipy import sparse as sp
 
 from nlp.model.nlpmodel import NLPModel

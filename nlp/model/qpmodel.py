@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Base classes for quadratic optimization models."""
 
+from builtins import range
 import logging
 import numpy as np
 from nlp.model.kkt import KKTresidual
@@ -138,7 +139,7 @@ class QPModel(NLPModel):
         self.A = A
 
         # Default classification of constraints
-        self._lin = range(self.m)             # Linear    constraints
+        self._lin = list(range(self.m))       # Linear    constraints
         self._nln = []                        # Nonlinear constraints
         self._net = []                        # Network   constraints
         self._nlin = len(self.lin)            # Number of linear constraints

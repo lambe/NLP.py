@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """A framework to add slack variables to any NLPModel."""
 
+from builtins import range
 import numpy as np
 from nlp.model.nlpmodel import NLPModel
 from pykrylov.linop.linop import LinearOperator, ReducedLinearOperator

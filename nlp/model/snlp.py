@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """A framework to add slack variables to any NLPModel."""
 
+from builtins import range
 import numpy as np
 from nlp.model.nlpmodel import NLPModel
 from pysparse.sparse import PysparseMatrix as psp
@@ -88,17 +89,17 @@ class SlackModel(NLPModel):
 
         # Add bounds corresponding to lower constraints
         bot = self.original_n
-        self.sL = range(bot, bot + model.nlowerC)
+        self.sL = list(range(bot, bot + model.nlowerC))
         Lvar[bot:bot + model.nlowerC] = model.Lcon[model.lowerC]
 
         # Add bounds corresponding to upper constraints
         bot += model.nlowerC
-        self.sU = range(bot, bot + model.nupperC)
+        self.sU = list(range(bot, bot + model.nupperC))
         Uvar[bot:bot + model.nupperC] = model.Ucon[model.upperC]
 
         # Add bounds corresponding to range constraints
         bot += model.nupperC
-        self.sR = range(bot, bot + model.nrangeC)
+        self.sR = list(range(bot, bot + model.nrangeC))
         Lvar[bot:bot + model.nrangeC] = model.Lcon[model.rangeC]
         Uvar[bot:bot + model.nrangeC] = model.Ucon[model.rangeC]
 

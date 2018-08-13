@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """A framework to convert all constraints to equality and nonnegativity."""
 
+from builtins import range
 import numpy as np
 from nlp.model.nlpmodel import NLPModel
 
@@ -8,12 +9,12 @@ __docformat__ = 'restructuredtext'
 
 
 class PosModel(NLPModel):
-	u"""General framework for converting a nonlinear optimization problem
-	to a form with nonnegative inequality constraints.
+    u"""General framework for converting a nonlinear optimization problem
+    to a form with nonnegative inequality constraints.
 
-	** Full implementation to be completed **
-	** Documentation to be updated **
-	"""
+    ** Full implementation to be completed **
+    ** Documentation to be updated **
+    """
 
     def cons_pos(self, x):
         """Convenience function to return constraints as non negative ones.
@@ -62,7 +63,7 @@ class PosModel(NLPModel):
         e = np.ones(self.ncon + self.nrangeC)
         e[self.upperC] = -1
         e[self.ncon:] = -1
-        JR = ReducedLinearOperator(J, self.rangeC, range(self.nvar))
+        JR = ReducedLinearOperator(J, self.rangeC, list(range(self.nvar)))
         Jpos = BlockLinearOperator([[J], [JR]], dtype=np.float)
         D = DiagonalOperator(e)
         return D * Jpos  # Flip sign of 'upper' constraints.
@@ -159,7 +160,7 @@ class PosModel(NLPModel):
         nuC = self.nupperC
         nrC = self.nrangeC
 
-        not_eC = lC + uC + rC + range(nlC + nuC + nrC, nlC + nuC + nrC + nrC)
+        not_eC = lC + uC + rC + list(range(nlC + nuC + nrC, nlC + nuC + nrC + nrC))
         if c is None:
             c = self.cons_pos(x)
 

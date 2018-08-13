@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Restriction of models to lines."""
+from __future__ import division
 
 from nlp.model.nlpmodel import NLPModel
 from nlp.tools.utils import where, Min, Max

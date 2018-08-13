@@ -1,3 +1,5 @@
+from __future__ import division
+from builtins import object
 class KKTresidual(object):
     """
     A generic class to package KKT residuals and corresponding scalings.
