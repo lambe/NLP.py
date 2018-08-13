@@ -5,15 +5,17 @@ from __future__ import division
 from builtins import str
 from builtins import range
 from builtins import object
+
 import logging
 import os
 import sys
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import LinearOperator
+
 from nlp.model.kkt import KKTresidual
 from nlp.tools.decorators import deprecated, counter
 from nlp.tools.utils import where
-from pykrylov.linop.linop import LinearOperator
-from pysparse.sparse import PysparseMatrix as psp
 
 
 class NLPModel(object):
@@ -584,10 +586,9 @@ class NLPModel(object):
 
     def jop(self, x):
         """Obtain Jacobian at x as a linear operator."""
-        return LinearOperator(self.n, self.m,
-                              lambda v: self.jprod(x, v),
-                              matvec_transp=lambda u: self.jtprod(x, u),
-                              symmetric=False,
+        return LinearOperator((self.n, self.m),
+                              matvec=lambda v: self.jprod(x, v),
+                              rmatvec=lambda u: self.jtprod(x, u),
                               dtype=np.float)
 
     def lag(self, x, z, **kwargs):
@@ -640,9 +641,9 @@ class NLPModel(object):
 
     def hop(self, x, z=None, **kwargs):
         """Obtain Lagrangian Hessian at (x, z) as a linear operator."""
-        return LinearOperator(self.n, self.n,
-                              lambda v: self.hprod(x, z, v, **kwargs),
-                              symmetric=True,
+        return LinearOperator((self.n, self.n),
+                              matvec=lambda v: self.hprod(x, z, v, **kwargs),
+                              rmatvec=lambda v: self.hprod(x, z, v, **kwargs),
                               dtype=np.float)
 
     def display_basic_info(self):
@@ -717,7 +718,7 @@ class DenseNLPModel(NLPModel):
 
 class SparseNLPModel(NLPModel):
     """A specialization of NLPModel where jac() and hess() always return
-    sparse matrices of the Pysparse type.
+    coordinate (COO) format sparse matrices.
 
     Note: to use this class, the user must define the jac_triple and
     hess_triple methods to return a triple of Numpy vectors in the order
@@ -736,13 +737,10 @@ class SparseNLPModel(NLPModel):
     def jac(self, x, **kwargs):
         """Evaluate constraints Jacobian at x.
 
-        The matrix is constructed from a Numpy vector triple defined by
-        the jac_triple() method."""
+        This method will work on unconstrained problems; just return
+        zero-length arrays from jac_triple()."""
         vals, rows, cols = self.jac_triple(x, **kwargs)
-        J = psp(nrow=self.ncon, ncol=self.nvar,
-                sizeHint=vals.size, symmetric=False)
-        if vals.size > 0:
-            J.put(vals, rows, cols)
+        J = sp.coo_matrix((vals, (rows, cols)), shape=(self.ncon, self.nvar))
         return J
 
     def jprod(self, x, p, **kwargs):
@@ -760,8 +758,7 @@ class SparseNLPModel(NLPModel):
     def hess(self, x, z=None, **kwargs):
         """Evaluate Lagrangian Hessian at (x, z)."""
         vals, rows, cols = self.hess_triple(x, z, **kwargs)
-        H = psp(size=self.nvar, sizeHint=vals.size, symmetric=True)
-        H.put(vals, rows, cols)
+        H = sp.coo_matrix((vals, (rows, cols)), shape=(self.nvar, self.nvar))
         return H
 
     def hprod(self, x, z, p, **kwargs):
