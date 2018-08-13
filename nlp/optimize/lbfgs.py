@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """The limited-memory BFGS linesearch method for unconstrained optimization."""
+from __future__ import division
 
+from builtins import object
 import logging
 from nlp.model.linemodel import C1LineModel
 from nlp.ls.linesearch import ArmijoWolfeLineSearch
@@ -94,7 +96,7 @@ class LBFGS(object):
             d = -(H * g)
 
             # Prepare for modified linesearch
-            step0 = max(1.0e-3, 1.0 / g_norm) if self.iter == 0 else 1.0
+            step0 = max(1.0e-3, 1 / g_norm) if self.iter == 0 else 1.0
             line_model = C1LineModel(self.model, x, d)
             ls = self.setup_linesearch(line_model, step0)
             try:

@@ -3,6 +3,8 @@
 
 D. Orban            Montreal Sept. 2003
 """
+from __future__ import division
+from builtins import object
 from nlp.model.nlpmodel import QPModel
 from nlp.tr.trustregion import TrustRegionSolver
 from nlp.tools import norms

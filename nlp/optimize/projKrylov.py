@@ -41,6 +41,8 @@ References
 
 """
 
+from builtins import range
+from builtins import object
 from pysparse.sparse import spmatrix
 
 try:                            # To compute projections
@@ -153,7 +155,7 @@ class ProjectedKrylov(object):
         if self.precon is not None:
             P[:self.n, :self.n] = self.precon
         else:
-            r = range(self.n)
+            r = list(range(self.n))
             P.put(1, r, r)
             # for i in range(self.n):
             #    P[i,i] = 1
@@ -161,7 +163,7 @@ class ProjectedKrylov(object):
 
         # Add regularization if requested.
         if self.dreg > 0.0:
-            r = range(self.n, self.n + self.m)
+            r = list(range(self.n, self.n + self.m))
             P.put(-self.dreg, r, r)
 
         msg = 'Factorizing projection matrix '

@@ -8,6 +8,10 @@ using MA27 or MA57.
 
 D. Orban, Montreal 2009-2011.
 """
+from __future__ import print_function
+from builtins import str
+from builtins import range
+from builtins import object
 try:                            # To solve augmented systems
     from hsl.solvers.pyma57 import PyMa57Solver as LBLContext
 except ImportError:
@@ -150,7 +154,7 @@ class RegQPInteriorPointSolver(object):
         self.scale_type = kwargs.get('scale_type', 'none')
 
         self.qp = qp
-        print qp        # Let the user know we have started
+        print(qp)        # Let the user know we have started
 
         # Solver cannot support QPs with fixed variables at this time
         if qp.nfixedB > 0:
@@ -216,7 +220,7 @@ class RegQPInteriorPointSolver(object):
         self.normH = self.H.matrix.norm('fro')
 
         # It will be more efficient to keep the diagonal of H around.
-        self.diagH = self.H.take(range(self.n))
+        self.diagH = self.H.take(list(range(self.n)))
 
         # We perform the analyze phase on the augmented system only once.
         # self.lin_solver will be initialized in solve().
@@ -408,7 +412,7 @@ class RegQPInteriorPointSolver(object):
             self.normc = norm2(self.c)
             self.normA = self.A.matrix.norm('fro')
             self.normH = self.H.matrix.norm('fro')
-            self.diagH = self.H.take(range(self.n))
+            self.diagH = self.H.take(list(range(self.n)))
 
             # Modify least-squares operator as well
             if self.use_lsq:
@@ -941,7 +945,7 @@ class RegQPInteriorPointSolver(object):
         self.K[n:n+p, :n] = self.C
         self.K[n+p:n+p+m, :n] = self.A
 
-        self.K.put(-1.0, range(n, n+p))
+        self.K.put(-1.0, list(range(n, n+p)))
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -963,12 +967,12 @@ class RegQPInteriorPointSolver(object):
         if self.initial_guess:
             self.log.debug('Setting up matrix for initial guess')
 
-            self.K.put(self.diagH + self.primal_reg_min**0.5, range(n))
-            self.K.put(-self.dual_reg_min**0.5, range(n+p,n+p+m))
+            self.K.put(self.diagH + self.primal_reg_min**0.5, list(range(n)))
+            self.K.put(-self.dual_reg_min**0.5, list(range(n+p,n+p+m)))
 
-            self.K.put(-1.0, range(n+p+m, n+p+m+nl+nu))
-            self.K.put(1.0, range(n+p+m, n+p+m+nl), self.all_lb)
-            self.K.put(1.0, range(n+p+m+nl, n+p+m+nl+nu), self.all_ub)
+            self.K.put(-1.0, list(range(n+p+m, n+p+m+nl+nu)))
+            self.K.put(1.0, list(range(n+p+m, n+p+m+nl)), self.all_lb)
+            self.K.put(1.0, list(range(n+p+m+nl, n+p+m+nl+nu)), self.all_ub)
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -978,13 +982,13 @@ class RegQPInteriorPointSolver(object):
             zL = self.zL
             zU = self.zU
 
-            self.K.put(self.diagH + self.primal_reg, range(n))
-            self.K.put(-self.dual_reg, range(n+p,n+p+m))
+            self.K.put(self.diagH + self.primal_reg, list(range(n)))
+            self.K.put(-self.dual_reg, list(range(n+p,n+p+m)))
 
-            self.K.put(Lvar[self.all_lb] - x[self.all_lb], range(n+p+m, n+p+m+nl))
-            self.K.put(x[self.all_ub] - Uvar[self.all_ub], range(n+p+m+nl, n+p+m+nl+nu))
-            self.K.put(zL**0.5, range(n+p+m, n+p+m+nl), self.all_lb)
-            self.K.put(zU**0.5, range(n+p+m+nl, n+p+m+nl+nu), self.all_ub)
+            self.K.put(Lvar[self.all_lb] - x[self.all_lb], list(range(n+p+m, n+p+m+nl)))
+            self.K.put(x[self.all_ub] - Uvar[self.all_ub], list(range(n+p+m+nl, n+p+m+nl+nu)))
+            self.K.put(zL**0.5, list(range(n+p+m, n+p+m+nl)), self.all_lb)
+            self.K.put(zU**0.5, list(range(n+p+m+nl, n+p+m+nl+nu)), self.all_ub)
 
         return
 
@@ -1013,8 +1017,8 @@ class RegQPInteriorPointSolver(object):
         m = self.m
         p = self.p
         self.log.debug('Updating matrix')
-        self.K.put(self.diagH + self.primal_reg, range(n))
-        self.K.put(-self.dual_reg, range(n+p,n+p+m))
+        self.K.put(self.diagH + self.primal_reg, list(range(n)))
+        self.K.put(-self.dual_reg, list(range(n+p,n+p+m)))
         return
 
     def set_system_rhs(self, **kwargs):
@@ -1166,7 +1170,7 @@ class RegQPInteriorPointSolver(object):
             self.normc = norm2(self.c)
             self.normA = self.A.matrix.norm('fro')
             self.normH = self.H.matrix.norm('fro')
-            self.diagH = self.H.take(range(self.n))
+            self.diagH = self.H.take(list(range(self.n)))
 
             # Modify least-squares operator, if any
             if self.use_lsq:
@@ -1239,7 +1243,7 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         self.K[self.n:self.n+self.p, :self.n] = self.C
         self.K[self.n+self.p:self.n+self.p+self.m, :self.n] = self.A
 
-        self.K.put(-1.0, range(self.n, self.n+self.p))
+        self.K.put(-1.0, list(range(self.n, self.n+self.p)))
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -1257,8 +1261,8 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             new_diag[self.all_lb] += 1.0
             new_diag[self.all_ub] += 1.0
 
-            self.K.put(new_diag, range(n))
-            self.K.put(-self.dual_reg_min**0.5, range(n+p,n+p+m))
+            self.K.put(new_diag, list(range(n)))
+            self.K.put(-self.dual_reg_min**0.5, list(range(n+p,n+p+m)))
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -1270,8 +1274,8 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
             new_diag[self.all_lb] += self.zL / x_minus_l
             new_diag[self.all_ub] += self.zU / u_minus_x
 
-            self.K.put(new_diag, range(n))
-            self.K.put(-self.dual_reg, range(n+p,n+p+m))
+            self.K.put(new_diag, list(range(n)))
+            self.K.put(-self.dual_reg, list(range(n+p,n+p+m)))
 
         return
 
@@ -1291,8 +1295,8 @@ class RegQPInteriorPointSolver2x2(RegQPInteriorPointSolver):
         n = self.n
         m = self.m
         p = self.p
-        self.K.put(new_diag, range(n))
-        self.K.put(-self.dual_reg, range(n+p,n+p+m))
+        self.K.put(new_diag, list(range(n)))
+        self.K.put(-self.dual_reg, list(range(n+p,n+p+m)))
         return
 
     def set_system_rhs(self, **kwargs):
@@ -1488,8 +1492,8 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             # Main block column / row
             self.K_block[:p, :] = self.C
             self.K_block[p:p+m, :] = self.A
-            self.K_block.put(1.0, range(p+m, p+m+nl), self.all_lb)
-            self.K_block.put(1.0, range(p+m+nl, p+m+nl+nu), self.all_ub)
+            self.K_block.put(1.0, list(range(p+m, p+m+nl)), self.all_lb)
+            self.K_block.put(1.0, list(range(p+m+nl, p+m+nl+nu)), self.all_ub)
 
             # Diagonals
             self.K_diag_22[:p] = 1.0
@@ -1511,8 +1515,8 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
             # Main block column / row
             self.K_block[:p, :] = self.C
             self.K_block[p:p+m, :] = self.A
-            self.K_block.put(zL**0.5, range(p+m, p+m+nl), self.all_lb)
-            self.K_block.put(zU**0.5, range(p+m+nl, p+m+nl+nu), self.all_ub)
+            self.K_block.put(zL**0.5, list(range(p+m, p+m+nl)), self.all_lb)
+            self.K_block.put(zU**0.5, list(range(p+m+nl, p+m+nl+nu)), self.all_ub)
 
             # Diagonals
             self.K_diag_22[:p] = 1.0
@@ -1528,7 +1532,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         if self.primal_solve:
             self.K[:self.sys_size, :] = self.K_block
-            self.K.put(1.0, range(self.sys_size, self.sys_size+n), range(n))
+            self.K.put(1.0, list(range(self.sys_size, self.sys_size+n)), list(range(n)))
 
             self.K_scaling[:self.sys_size] = 1./self.K_diag_22
             self.K_scaling[self.sys_size:] = self.K_diag_11
@@ -1539,7 +1543,7 @@ class RegQPInteriorPointSolverQR(RegQPInteriorPointSolver):
 
         else:
             self.K[:, :n] = self.K_block
-            self.K.put(1.0, range(self.sys_size), range(n,n+self.sys_size))
+            self.K.put(1.0, list(range(self.sys_size)), list(range(n,n+self.sys_size)))
 
             self.K_scaling[:n] = 1./self.K_diag_11
             self.K_scaling[n:] = self.K_diag_22
@@ -2025,7 +2029,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         if self.primal_solve:
             self.K[:self.sys_size, :] = self.K_block
-            self.K.put(1.0, range(self.sys_size, self.sys_size+n), range(n))
+            self.K.put(1.0, list(range(self.sys_size, self.sys_size+n)), list(range(n)))
 
             self.K_scaling[:self.sys_size] = 1./self.K_diag_22
             self.K_scaling[self.sys_size:] = self.K_diag_11
@@ -2036,7 +2040,7 @@ class RegQPInteriorPointSolver2x2QR(RegQPInteriorPointSolver2x2):
 
         else:
             self.K[:, :n] = self.K_block
-            self.K.put(1.0, range(self.sys_size), range(n,self.sys_size+n))
+            self.K.put(1.0, list(range(self.sys_size)), list(range(n,self.sys_size+n)))
 
             self.K_scaling[:n] = 1./self.K_diag_11
             self.K_scaling[n:] = self.K_diag_22
@@ -2604,7 +2608,7 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         self.K[n+on:n+on+p, :n] = self.C
         self.K[n+on+p:n+on+p+m, :n] = self.A
 
-        self.K.put(-1.0, range(n+on, n+on+p))
+        self.K.put(-1.0, list(range(n+on, n+on+p)))
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -2624,18 +2628,18 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         if self.initial_guess:
             self.log.debug('Setting up matrix for initial guess')
 
-            self.K.put(self.diagH + self.primal_reg_min**0.5, range(n))
-            self.K.put(self.primal_reg_min**0.5, range(n,n+on))
-            self.K.put(-self.dual_reg_min**0.5, range(n+on+p,z_start))
+            self.K.put(self.diagH + self.primal_reg_min**0.5, list(range(n)))
+            self.K.put(self.primal_reg_min**0.5, list(range(n,n+on)))
+            self.K.put(-self.dual_reg_min**0.5, list(range(n+on+p,z_start)))
 
-            self.K.put(-1.0, range(z_start, self.sys_size))
-            self.K.put(1.0, range(z_start, z_start+nl), self.all_lb)
-            self.K.put(1.0, range(z_start+nl, z_start+nl+on), range(on))
-            self.K.put(1.0, range(z_start+nl, z_start+nl+on), range(n,n+on))
+            self.K.put(-1.0, list(range(z_start, self.sys_size)))
+            self.K.put(1.0, list(range(z_start, z_start+nl)), self.all_lb)
+            self.K.put(1.0, list(range(z_start+nl, z_start+nl+on)), list(range(on)))
+            self.K.put(1.0, list(range(z_start+nl, z_start+nl+on)), list(range(n,n+on)))
 
-            self.K.put(1.0, range(z_start+nl+on, z_start+nl+on+nu), self.all_ub)
-            self.K.put(1.0, range(z_start+nl+on+nu, self.sys_size), range(on))
-            self.K.put(-1.0, range(z_start+nl+on+nu, self.sys_size), range(n,n+on))
+            self.K.put(1.0, list(range(z_start+nl+on, z_start+nl+on+nu)), self.all_ub)
+            self.K.put(1.0, list(range(z_start+nl+on+nu, self.sys_size)), list(range(on)))
+            self.K.put(-1.0, list(range(z_start+nl+on+nu, self.sys_size)), list(range(n,n+on)))
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -2646,23 +2650,23 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
             zU = self.zU
 
             # Main diagonal terms
-            self.K.put(self.diagH + self.primal_reg, range(n))
-            self.K.put(self.primal_reg, range(n,n+on))
-            self.K.put(-self.dual_reg, range(n+on+p,z_start))
+            self.K.put(self.diagH + self.primal_reg, list(range(n)))
+            self.K.put(self.primal_reg, list(range(n,n+on)))
+            self.K.put(-self.dual_reg, list(range(n+on+p,z_start)))
 
-            self.K.put(Lvar[self.all_lb] - x[self.all_lb], range(z_start, z_start+nl))
-            self.K.put(-x[:on] - x[n:], range(z_start+nl, z_start+nl+on))
-            self.K.put(x[self.all_ub] - Uvar[self.all_ub], range(z_start+nl+on, z_start+nl+on+nu))
-            self.K.put(x[:on] - x[n:], range(z_start+nl+on+nu, self.sys_size))
+            self.K.put(Lvar[self.all_lb] - x[self.all_lb], list(range(z_start, z_start+nl)))
+            self.K.put(-x[:on] - x[n:], list(range(z_start+nl, z_start+nl+on)))
+            self.K.put(x[self.all_ub] - Uvar[self.all_ub], list(range(z_start+nl+on, z_start+nl+on+nu)))
+            self.K.put(x[:on] - x[n:], list(range(z_start+nl+on+nu, self.sys_size)))
 
             # Bound multiplier blocks
-            self.K.put(zL[:nl]**0.5, range(z_start, z_start+nl), self.all_lb)
-            self.K.put(zL[nl:]**0.5, range(z_start+nl, z_start+nl+on), range(on))
-            self.K.put(zL[nl:]**0.5, range(z_start+nl, z_start+nl+on), range(n,n+on))
+            self.K.put(zL[:nl]**0.5, list(range(z_start, z_start+nl)), self.all_lb)
+            self.K.put(zL[nl:]**0.5, list(range(z_start+nl, z_start+nl+on)), list(range(on)))
+            self.K.put(zL[nl:]**0.5, list(range(z_start+nl, z_start+nl+on)), list(range(n,n+on)))
 
-            self.K.put(zU[:nu]**0.5, range(z_start+nl+on, z_start+nl+on+nu), self.all_ub)
-            self.K.put(zU[nu:]**0.5, range(z_start+nl+on+nu, self.sys_size), range(on))
-            self.K.put(-zU[nu:]**0.5, range(z_start+nl+on+nu, self.sys_size), range(n,n+on))
+            self.K.put(zU[:nu]**0.5, list(range(z_start+nl+on, z_start+nl+on+nu)), self.all_ub)
+            self.K.put(zU[nu:]**0.5, list(range(z_start+nl+on+nu, self.sys_size)), list(range(on)))
+            self.K.put(-zU[nu:]**0.5, list(range(z_start+nl+on+nu, self.sys_size)), list(range(n,n+on)))
 
         return
 
@@ -2675,9 +2679,9 @@ class RegL1QPInteriorPointSolver(RegQPInteriorPointSolver):
         m = self.m
         p = self.p
         self.log.debug('Updating matrix')
-        self.K.put(self.diagH + self.primal_reg, range(n))
-        self.K.put(self.primal_reg, range(n,n+on))
-        self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+        self.K.put(self.diagH + self.primal_reg, list(range(n)))
+        self.K.put(self.primal_reg, list(range(n,n+on)))
+        self.K.put(-self.dual_reg, list(range(n+on+p,n+on+p+m)))
         return
 
     def set_system_rhs(self, **kwargs):
@@ -2857,7 +2861,7 @@ class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
         self.K[n+on:n+on+p, :n] = self.C
         self.K[n+on+p:n+on+p+m, :n] = self.A
 
-        self.K.put(-1.0, range(n+on, n+on+p))
+        self.K.put(-1.0, list(range(n+on, n+on+p)))
 
         self.rhs = np.zeros(self.sys_size)
         return
@@ -2887,10 +2891,10 @@ class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
             # be incorrect in the main loop
             off_diag = 1.e-20 * np.ones(on, dtype=np.float)
 
-            self.K.put(new_diag, range(n))
-            self.K.put(new_diag_2, range(n,n+on))
-            self.K.put(off_diag, range(n,n+on), range(on))
-            self.K.put(-self.dual_reg_min**0.5, range(n+on+p,n+on+p+m))
+            self.K.put(new_diag, list(range(n)))
+            self.K.put(new_diag_2, list(range(n,n+on)))
+            self.K.put(off_diag, list(range(n,n+on)), list(range(on)))
+            self.K.put(-self.dual_reg_min**0.5, list(range(n+on+p,n+on+p+m)))
 
         else:
             self.log.debug('Setting up matrix for current iteration')
@@ -2912,10 +2916,10 @@ class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
 
             off_diag = (self.zL[nl:] / v_plus_x) - (self.zU[nu:] / v_minus_x)
 
-            self.K.put(new_diag, range(n))
-            self.K.put(new_diag_2, range(n,n+on))
-            self.K.put(off_diag, range(n,n+on), range(on))
-            self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+            self.K.put(new_diag, list(range(n)))
+            self.K.put(new_diag_2, list(range(n,n+on)))
+            self.K.put(off_diag, list(range(n,n+on)), list(range(on)))
+            self.K.put(-self.dual_reg, list(range(n+on+p,n+on+p+m)))
 
         return
 
@@ -2947,9 +2951,9 @@ class RegL1QPInteriorPointSolver2x2(RegL1QPInteriorPointSolver):
         new_diag_2 += self.zL[nl:] / v_plus_x
         new_diag_2 += self.zU[nu:] / v_minus_x
 
-        self.K.put(new_diag, range(n))
-        self.K.put(new_diag_2, range(n,n+on))
-        self.K.put(-self.dual_reg, range(n+on+p,n+on+p+m))
+        self.K.put(new_diag, list(range(n)))
+        self.K.put(new_diag_2, list(range(n,n+on)))
+        self.K.put(-self.dual_reg, list(range(n+on+p,n+on+p+m)))
 
         return
 

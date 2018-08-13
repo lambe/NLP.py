@@ -6,7 +6,9 @@ A pure Python/Numpy implementation of TRON as described in
 Chih-Jen Lin and Jorge J. Moré, *Newton's Method for Large Bound-
 Constrained Optimization Problems*, SIAM J. Optim., 9(4), 1100–1127, 1999.
 """
+from __future__ import division
 
+from builtins import object
 import logging
 import numpy as np
 from pykrylov.linop import SymmetricallyReducedLinearOperator as ReducedHessian

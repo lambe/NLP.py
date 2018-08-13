@@ -12,6 +12,7 @@ with the addition of an optional trust-region constraint.
 
 .. moduleauthor:: D. Orban <dominique.orban@gerad.ca>
 """
+from __future__ import division
 from math import sqrt
 import numpy as np
 

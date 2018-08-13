@@ -8,7 +8,9 @@ truncated preconditioned conjugate gradient algorithm as described in
 
 .. moduleauthor:: D. Orban <dominique.orban@gerad.ca>
 """
+from __future__ import division
 
+from builtins import object
 from nlp.tools.utils import to_boundary
 from nlp.tools.exceptions import UserExitRequest
 import numpy as np

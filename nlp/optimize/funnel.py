@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """An implementation of the trust-funnel method."""
+from __future__ import division
+from builtins import object
 from math import sqrt
 import numpy as np
 import logging
