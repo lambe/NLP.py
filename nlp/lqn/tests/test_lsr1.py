@@ -3,8 +3,8 @@
 from __future__ import division
 import unittest
 import numpy as np
-from pykrylov.linop import lsr1
-from pykrylov.tools import check_symmetric
+from nlp.lqn import lsr1
+from nlp.tools.utils import check_symmetric
 
 
 class TestLSR1Operator(unittest.TestCase):

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 PyMSWolfe: Jorge Nocedal's modified More and Thuente linesearch
 guaranteeing satisfaction of the strong Wolfe conditions.

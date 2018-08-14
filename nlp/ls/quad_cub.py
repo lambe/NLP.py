@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Quadratic/Cubic linesearch."""
 from __future__ import division
 

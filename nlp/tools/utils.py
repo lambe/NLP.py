@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Utilities."""
 from __future__ import division
 
@@ -193,3 +194,55 @@ def breakpoints(x, d, l, u):
         brptmax = max(brptmax, np.max(steps))
 
     return (nbrpt, brptmin, brptmax)
+
+
+def check_symmetric(op, repeats=10):
+    """Cheap symmetry check.
+
+    Cheap check that a linear operator is symmetric. Supply `op`, a callable
+    linear operator. A set of `repeats` random vectors will be generated.
+    This function returns `True` or `False`.
+    """
+    m, n = op.shape
+    if m != n:
+        return False
+    eps = machine_epsilon()
+    np.random.seed(1)
+    for _ in xrange(repeats):
+        x = np.random.random(n)
+        w = op * x
+        r = op * w
+        s = np.dot(w, w)
+        t = np.dot(x, r)
+        z = abs(s - t)
+        epsa = (s + eps) * eps**(1.0/3)
+        if z > epsa:
+            return False
+    return True
+
+
+def check_positive_definite(op, repeats=10, semi=False):
+    """Quick positive (semi-)definiteness check.
+
+    Specify `semi=True` to check positive semi-definiteness. A set of
+    `repeats` random vectors will be generated. This function returns
+    `True` or `False`.
+    """
+    m, n = op.shape
+    if m != n:
+        return False
+    for _ in xrange(repeats):
+        v = np.random.random(n)
+        w = op * v
+        vw = np.dot(v, w)
+        eps = machine_epsilon()
+        if np.imag(vw) > np.sqrt(eps) * np.abs(vw):
+            return False
+        vw = np.real(vw)
+        if semi:
+            if vw < 0:
+                return False
+        else:
+            if vw <= 0:
+                return False
+    return True

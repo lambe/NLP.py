@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """A general linesearch framework."""
 from __future__ import division
 

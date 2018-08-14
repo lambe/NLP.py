@@ -3,8 +3,8 @@
 from __future__ import division
 import unittest
 import numpy as np
-from pykrylov.linop import lbfgs
-from pykrylov.tools import check_symmetric, check_positive_definite
+from nlp.lqn import lbfgs
+from nlp.tools.utils import check_symmetric, check_positive_definite
 
 
 class TestLBFGSOperator(unittest.TestCase):

@@ -88,6 +88,7 @@ Operating System :: MacOS
 
 packages_list = ['nlp',
                  'nlp.model',
+                 'nlp.lqn',
                  'nlp.ls',
                  'nlp.optimize',
                  'nlp.tools',

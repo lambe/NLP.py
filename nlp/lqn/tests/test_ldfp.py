@@ -3,8 +3,8 @@
 from __future__ import division
 import unittest
 import numpy as np
-from pykrylov.linop import ldfp
-from pykrylov.tools import check_symmetric, check_positive_definite
+from nlp.lqn import ldfp
+from nlp.tools.utils import check_symmetric, check_positive_definite
 
 
 class TestLDFPOperator(unittest.TestCase):

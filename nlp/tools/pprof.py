@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 u"""A module to create and plot performance profiles.
 
 Performance profiles are implemented as described in

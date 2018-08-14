@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Class definition for Trust-Region Algorithm and Management."""
 from __future__ import division
 
