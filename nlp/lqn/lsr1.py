@@ -4,7 +4,7 @@
 Linear operators to represent limited-memory SR1 matrices and their inverses.
 L-SR1 matrices may not be positive-definite.
 """
-from pykrylov.linop import LQNLinearOperator, StructuredLQNLinearOperator
+from nlp.lqn.lqn_base import LQNLinearOperator, StructuredLQNLinearOperator
 
 import numpy as np
 from numpy.linalg import norm

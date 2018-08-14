@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
+
 def ReducedLinearOperator(op, row_indices, col_indices):
     """
     Reduce a linear operator by limiting its input to `col_indices` and its

@@ -4,7 +4,7 @@
 Linear operators to represent limited-memory DFP matrices
 and their inverses.
 """
-from pykrylov.linop import InverseLBFGSOperator, LBFGSOperator
+from nlp.lqn.lbfgs import InverseLBFGSOperator, LBFGSOperator
 
 __docformat__ = 'restructuredtext'
 

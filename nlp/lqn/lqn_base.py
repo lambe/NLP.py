@@ -5,8 +5,8 @@ Linear operators to represent limited-memory quasi-Newton matrices
 or their inverses.
 """
 
-from pykrylov.linop import LinearOperator
 import numpy as np
+from scipy.sparse.linalg import LinearOperator
 
 __docformat__ = 'restructuredtext'
 
@@ -49,9 +49,9 @@ class LQNLinearOperator(LinearOperator):
         # Keep track of number of matrix-vector products.
         self.n_matvec = 0
 
-        super(LQNLinearOperator, self).__init__(n, n,
+        super(LQNLinearOperator, self).__init__((n, n),
                                                 matvec=self.qn_matvec,
-                                                symmetric=True, **kwargs)
+                                                **kwargs)
 
     @property
     def npairs(self):

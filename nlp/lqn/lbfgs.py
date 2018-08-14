@@ -4,7 +4,7 @@
 Linear operators to represent limited-memory BFGS matrices and their inverses.
 """
 
-from pykrylov.linop import LQNLinearOperator, StructuredLQNLinearOperator
+from nlp.lqn.lqn_base import LQNLinearOperator, StructuredLQNLinearOperator
 import numpy as np
 
 __docformat__ = 'restructuredtext'
