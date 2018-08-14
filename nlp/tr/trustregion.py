@@ -5,6 +5,8 @@ from __future__ import division
 from builtins import object
 import numpy as np
 
+from nlp.tools.utils import machine_epsilon
+
 __docformat__ = 'restructuredtext'
 
 
@@ -36,15 +38,14 @@ class TrustRegion(object):
         self.eta2 = kwargs.get('eta2', 0.99)    # Radius increase threshold
         self.gamma1 = kwargs.get('gamma1', 1 / 3)  # Radius decrease factor
         self.gamma2 = kwargs.get('gamma2', 2.5)    # Radius increase factor
-        self.eps = np.finfo(np.double).eps  # Machine epsilon.
 
     def ratio(self, f, f_trial, m, check_positive=True):
         """Compute the ratio of actual versus predicted reduction.
 
         rho = (f - f_trial)/(-m).
         """
-        pred = -m + max(1.0, abs(f)) * 10.0 * self.eps
-        ared = f - f_trial + max(1.0, abs(f)) * 10.0 * self.eps
+        pred = -m + max(1.0, abs(f)) * 10.0 * machine_epsilon()
+        ared = f - f_trial + max(1.0, abs(f)) * 10.0 * machine_epsilon()
         if pred > 0 or not check_positive:
             return ared / pred
         else:
@@ -98,7 +99,6 @@ class GeneralizedTrustRegion(TrustRegion):
         self.gamma1 = 0.25
         self.gamma2 = 0.5
         self.gamma3 = 4.0
-        self.eps = np.finfo(np.double).eps  # Machine epsilon.
 
     def update_radius(self, ratio, step_norm, alpha):
         u"""Update the trust-region radius.

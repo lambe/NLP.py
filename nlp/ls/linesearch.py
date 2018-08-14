@@ -6,11 +6,9 @@ from builtins import object
 from math import sqrt
 import numpy as np
 from nlp.tools.exceptions import LineSearchFailure
+from nlp.tools.utils import machine_epsilon
 
 __docformat__ = 'restructuredtext'
-
-eps = np.finfo(np.double).eps
-sqeps = sqrt(eps)
 
 
 class LineSearch(object):
@@ -48,7 +46,7 @@ class LineSearch(object):
         self._step0 = max(kwargs.get("step", 1.0), 0)
         self._step = self._step0
 
-        self._stepmin = sqeps / 100
+        self._stepmin = sqrt(machine_epsilon()) / 100
         if self._step <= self.stepmin:
             raise LineSearchFailure("initial linesearch step too small")
 
@@ -141,7 +139,9 @@ class ArmijoLineSearch(LineSearch):
         """
         name = kwargs.pop("name", "Armijo linesearch")
         super(ArmijoLineSearch, self).__init__(*args, name=name, **kwargs)
-        self.__ftol = max(min(kwargs.get("ftol", 1.0e-4), 1 - sqeps), sqeps)
+        self.__ftol = max(min(kwargs.get("ftol", 1.0e-4),
+                              1 - sqrt(machine_epsilon())),
+                          sqrt(machine_epsilon()))
         self.__bkmax = max(kwargs.get("bkmax", 20), 0)
         self.__decr = max(min(kwargs.get("decr", 1.5), 100), 1.001)
         self._bk = 0
@@ -208,8 +208,8 @@ class ArmijoWolfeLineSearch(ArmijoLineSearch):
         super(ArmijoWolfeLineSearch, self).__init__(*args, name=name, **kwargs)
 
         self.__gtol = min(max(kwargs.get("gtol", 0.9999),
-                              self.ftol + sqeps),
-                          1 - sqeps)
+                              self.ftol + sqrt(machine_epsilon())),
+                          1 - sqrt(machine_epsilon()))
         self.__wmax = max(kwargs.get("wmax", 5), 0)
         self.__incr = max(min(kwargs.get("incr", 5.0), 100), 1.001)
         self._nw = 0

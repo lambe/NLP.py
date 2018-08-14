@@ -5,9 +5,7 @@ from __future__ import division
 from math import sqrt
 import numpy as np
 from nlp.ls.linesearch import LineSearch, LineSearchFailure
-
-eps = np.finfo(np.double).eps
-sqeps = sqrt(eps)
+from nlp.tools.utils import machine_epsilon
 
 
 class QuadraticCubicLineSearch(LineSearch):
@@ -34,9 +32,11 @@ class QuadraticCubicLineSearch(LineSearch):
         name = kwargs.pop("name", "Armijo linesearch")
         super(QuadraticCubicLineSearch, self).__init__(*args, name=name,
                                                        **kwargs)
-        self.__ftol = max(min(kwargs.get("ftol", 1.0e-4), 1 - sqeps), sqeps)
+        self.__ftol = max(min(kwargs.get("ftol", 1.0e-4),
+                              1 - sqrt(machine_epsilon())),
+                          sqrt(machine_epsilon()))
         self.__bkmax = max(kwargs.get("bkmax", 20), 0)
-        self.__eps1 = self.__eps2 = sqeps / 100
+        self.__eps1 = self.__eps2 = sqrt(machine_epsilon()) / 100
         self._bk = 0
         self._last_step = None
         self._last_trial_value = None

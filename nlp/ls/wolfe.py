@@ -17,6 +17,7 @@ from math import sqrt
 import numpy as np
 from nlp.ls.linesearch import LineSearch, LineSearchFailure
 from nlp.ls._strong_wolfe_linesearch import dcsrch
+from nlp.tools.utils import machine_epsilon
 
 
 class StrongWolfeLineSearch(LineSearch):
@@ -40,7 +41,7 @@ class StrongWolfeLineSearch(LineSearch):
         """
         name = kwargs.pop("name", "Strong Wolfe linesearch")
         super(StrongWolfeLineSearch, self).__init__(*args, name=name, **kwargs)
-        sqeps = sqrt(np.finfo(np.double).eps)
+        sqeps = sqrt(machine_epsilon())
         self.__ftol = max(min(kwargs.get("ftol", 1.0e-4),
                               1 - sqeps),
                           sqeps)

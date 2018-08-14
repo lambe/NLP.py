@@ -10,8 +10,9 @@ from numpy.linalg import norm
 from math import sqrt
 import logging
 
+from nlp.tools.utils import machine_epsilon
+
 np.random.seed(0)
-macheps = np.finfo(np.double).eps  # Machine epsilon.
 
 
 class DerivativeChecker(object):
@@ -37,8 +38,8 @@ class DerivativeChecker(object):
                             by (1 + ‖x‖₁) (default: ³√(ϵ/3))
             :logger_name: name of a logger object (default: None)
         """
-        self.tol = kwargs.get('tol', 100 * sqrt(macheps))
-        self.step = kwargs.get('step', (macheps / 3)**(1 / 3))
+        self.tol = kwargs.get('tol', 100 * sqrt(machine_epsilon()))
+        self.step = kwargs.get('step', (machine_epsilon() / 3)**(1 / 3))
         self.h = self.step * (1 + norm(x, 1))
 
         # Setup the logger. Install a NullHandler if no output needed.
