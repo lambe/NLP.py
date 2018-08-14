@@ -1,30 +1,13 @@
 from copy import copy
 import numpy as np
 import itertools
-from scipy.sparse.linalg import LinearOperator
+
+from nlp.tools.linop import EnhancedLinearOperator, null_log, ShapeError
 
 __docformat__ = 'restructuredtext'
 
 
-# Default (null) logger.
-null_log = logging.getLogger('linop')
-null_log.setLevel(logging.INFO)
-null_log.addHandler(logging.NullHandler())
-
-
-class ShapeError(Exception):
-    """
-    Exception raised when defining a linear operator of the wrong shape or
-    multiplying a linear operator with a vector of the wrong shape.
-    """
-    def __init__(self, value):
-        self.value = value
-
-    def __str__(self):
-        return repr(self.value)
-
-
-class BlockLinearOperator(LinearOperator):
+class BlockLinearOperator(EnhancedLinearOperator):
     """
     A linear operator defined by blocks. Each block must be a linear operator.
 
