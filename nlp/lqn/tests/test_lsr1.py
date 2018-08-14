@@ -4,6 +4,7 @@ from __future__ import division
 import unittest
 import numpy as np
 from nlp.lqn import lsr1
+from nlp.tools.linop import asEnhancedLinearOperator
 from nlp.tools.utils import check_symmetric
 
 
@@ -44,7 +45,8 @@ class TestLSR1Operator(unittest.TestCase):
         assert check_symmetric(self.H)
 
         C = self.B * self.H
-        assert np.allclose(C.full(), np.eye(self.n))
+        assert np.allclose(asEnhancedLinearOperator(C).full(), np.eye(self.n))
 
         C_compact = self.B_compact * self.H
-        assert np.allclose(C_compact.full(), np.eye(self.n))
+        assert np.allclose(asEnhancedLinearOperator(C_compact).full(),
+                           np.eye(self.n))

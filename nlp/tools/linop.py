@@ -1,7 +1,7 @@
 """Utilities for constructing specialized linear operators."""
 import logging
 import numpy as np
-from scipy.sparse.linalg import LinearOperator
+from scipy.sparse.linalg import LinearOperator, aslinearoperator
 
 __docformat__ = 'restructuredtext'
 
@@ -148,6 +148,19 @@ class EnhancedLinearOperator(LinearOperator):
 
         return y
 
+
+def asEnhancedLinearOperator(op):
+    """
+    Convert a scipy LinearOperator to a specialized EnhancedLinearOperator.
+    """
+    if not isinstance(op, LinearOperator):
+        op = aslinearoperator(op)
+
+    new_op = EnhancedLinearOperator(op.shape,
+                                    op.matvec,
+                                    rmatvec=op.rmatvec,
+                                    dtype=op.dtype)
+    return new_op
 
 def ReducedLinearOperator(op, row_indices, col_indices):
     """
