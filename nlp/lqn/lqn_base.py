@@ -6,12 +6,13 @@ or their inverses.
 """
 
 import numpy as np
-from scipy.sparse.linalg import LinearOperator
+# from scipy.sparse.linalg import LinearOperator
+from nlp.tools.linop import EnhancedLinearOperator
 
 __docformat__ = 'restructuredtext'
 
 
-class LQNLinearOperator(LinearOperator):
+class LQNLinearOperator(EnhancedLinearOperator):
     """Store and manipulate Limited-memory Quasi-Newton approximations."""
 
     def __init__(self, n, npairs=5, **kwargs):
@@ -26,6 +27,7 @@ class LQNLinearOperator(LinearOperator):
         """
         # Mandatory arguments
         self.n = n
+        self.shape = (n, n)
         self._npairs = npairs
 
         # Optional arguments
@@ -50,8 +52,11 @@ class LQNLinearOperator(LinearOperator):
         self.n_matvec = 0
 
         super(LQNLinearOperator, self).__init__((n, n),
-                                                matvec=self.qn_matvec,
+                                                self.qn_matvec,
                                                 **kwargs)
+        # super(LQNLinearOperator, self).__init__((n, n),
+        #                                         matvec=self.qn_matvec,
+        #                                         **kwargs)
 
     @property
     def npairs(self):
@@ -94,6 +99,9 @@ class LQNLinearOperator(LinearOperator):
     def qn_matvec(self, v):
         """Compute matrix-vector product."""
         raise NotImplementedError("Must be subclassed.")
+
+    # def _matvec(self, v):
+    #     return self.qn_matvec(v)
 
 
 class StructuredLQNLinearOperator(LQNLinearOperator):

@@ -3,6 +3,132 @@ import numpy as np
 from scipy.sparse.linalg import LinearOperator
 
 
+class EnhancedLinearOperator(LinearOperator):
+    """
+    This is a wrapper class to the Scipy LinearOperator that adds a few
+    useful capabilities for working in NLP.py. (Some of them may even
+    get merged upstream at a later date.)
+    """
+    def __init__(self, shape, matvec, rmatvec=None, dtype=np.float, **kwargs):
+        super(EnhancedLinearOperator, self).__init__(dtype, shape)
+
+        self.__nargin = shape[1]
+        self.__nargout = shape[0]
+        self.__symmetric = kwargs.get('symmetric', False)
+        self.__hermitian = kwargs.get('hermitian', False)
+        self._nMatvec = 0
+
+        self.__matvec_impl = matvec
+        self.__rmatvec_impl = rmatvec
+
+        # Log activity.
+        self.logger = kwargs.get('logger', null_log)
+        self.logger.info('New linear operator with shape ' + str(self.shape))
+
+    @property
+    def nargin(self):
+        """The size of an input vector."""
+        return self.__nargin
+
+    @property
+    def nargout(self):
+        """The size of an output vector."""
+        return self.__nargout
+
+    @property
+    def symmetric(self):
+        """Indicates whether the operator is symmetric."""
+        return self.__symmetric
+
+    @property
+    def hermitian(self):
+        """Indicates whether the operator is Hermitian."""
+        return self.__hermitian
+
+    @property
+    def nMatvec(self):
+        """The number of products with vectors computed so far."""
+        return self._nMatvec
+
+    def reset_counter(self):
+        """Reset operator/vector product counter to zero."""
+        self._nMatvec = 0
+
+    def to_array(self):
+        """Convert operator to a dense matrix."""
+        n, m = self.shape
+        H = np.empty((n, m), dtype=self.dtype)
+        e = np.zeros(m, dtype=self.dtype)
+        for j in xrange(m):
+            e[j] = 1
+            H[:, j] = self * e
+            e[j] = 0
+        return H
+
+    def full(self):
+        """Convert operator to a dense matrix. This is an alias of `to_array`."""
+        return self.to_array()
+
+    def _matvec(self, x):
+        """
+        Matrix-vector multiplication.
+
+        Encapsulates the matvec routine specified at
+        construct time, to ensure the consistency of the input and output
+        arrays with the operator's shape.
+        """
+        x = np.asanyarray(x)
+
+        # check input data consistency
+        try:
+            x = x.reshape(self.__nargin)
+        except ValueError:
+            msg = 'input array size incompatible with operator dimensions'
+            raise ValueError(msg)
+
+        y = self.__matvec_impl(x)
+
+        # check output data consistency
+        try:
+            y = y.reshape(self.__nargout)
+        except ValueError:
+            msg = 'output array size incompatible with operator dimensions'
+            raise ValueError(msg)
+
+        return y
+
+    def _rmatvec(self, x):
+        """
+        Vector-matrix multiplication.
+        (Equivalently, transpose matrix-vector multiplication.)
+
+        Encapsulates the rmatvec routine specified at construct time, (if
+        available,) to ensure the consistency of the input and output
+        arrays with the operator's shape.
+        """
+        x = np.asanyarray(x)
+
+        # check input data consistency
+        try:
+            x = x.reshape(self.__nargout)
+        except ValueError:
+            msg = 'input array size incompatible with operator dimensions'
+            raise ValueError(msg)
+
+        if self.__rmatvec_impl is None:
+            raise NotImplementedError("rmatvec is not defined")
+        y = self.__rmatvec_impl(x)
+
+        # check output data consistency
+        try:
+            y = y.reshape(self.__nargin)
+        except ValueError:
+            msg = 'output array size incompatible with operator dimensions'
+            raise ValueError(msg)
+
+        return y
+
+
 def ReducedLinearOperator(op, row_indices, col_indices):
     """
     Reduce a linear operator by limiting its input to `col_indices` and its
@@ -23,10 +149,12 @@ def ReducedLinearOperator(op, row_indices, col_indices):
         y = op.T * z
         return y[col_indices]
 
-    return LinearOperator((nargout, nargin),
-                          matvec=matvec,
-                          rmatvec=rmatvec,
-                          dtype=op.dtype)
+    return EnhancedLinearOperator((nargout, nargin),
+                                  matvec,
+                                  rmatvec=rmatvec,
+                                  dtype=op.dtype,
+                                  symmetric=False,
+                                  hermitian=False)
 
 
 def SymmetricallyReducedLinearOperator(op, indices):
@@ -48,7 +176,9 @@ def SymmetricallyReducedLinearOperator(op, indices):
         y = op.T * z
         return y[indices]
 
-    return LinearOperator((nargin, nargin),
-                          matvec=matvec,
-                          rmatvec=rmatvec,
-                          dtype=op.dtype)
+    return EnhancedLinearOperator((nargin, nargin),
+                                  matvec,
+                                  rmatvec=rmatvec,
+                                  dtype=op.dtype,
+                                  symmetric=op.symmetric,
+                                  hermitian=op.hermitian)

@@ -36,6 +36,10 @@ class NullHandler(logging.Handler):
 
 
 # Helper functions.
+def machine_epsilon():
+    """Return the machine epsilon in double precision."""
+    return np.finfo(np.double).eps
+
 def identical(a, b):
     """Check that two arrays or lists are identical.
 
