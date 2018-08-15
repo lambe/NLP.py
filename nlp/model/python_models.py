@@ -1,3 +1,4 @@
+"""A few NLPs written in pure Python, used mainly for unit tests."""
 from nlp.model.nlpmodel import NLPModel, UnconstrainedNLPModel
 import numpy as np
 
