@@ -10,11 +10,10 @@ except ImportError:
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import aslinearoperator
 from nlp.model.nlpmodel import NLPModel
 from nlp.model.qnmodel import QuasiNewtonModel
 from nlp.tools import sparse_vector_class as sv
-from nlp.tools.linop import ReducedLinearOperator
+from nlp.tools.linop import asLinearOperator, ReducedLinearOperator
 
 import tempfile
 import os
@@ -329,7 +328,7 @@ class AmplModel(NLPModel):
         """Jacobian at x as a linear operator."""
         vals, rows, cols = self.jac(x, *args, **kwargs)
         J = sp.coo_matrix((vals, (rows, cols)), shape=(self.ncon, self.nvar))
-        return aslinearoperator(J)
+        return asLinearOperator(J)
 
     def jprod(self, x, p, **kwargs):
         """Evaluate Jacobian-vector product at x with p."""
