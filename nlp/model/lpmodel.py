@@ -4,8 +4,8 @@
 import logging
 import numpy as np
 from nlp.model.kkt import KKTresidual
-from nlp.model.nlpmodel import NLPModel
-from pykrylov.linop.linop import LinearOperator
+from nlp.model.qpmodel import QPModel
+from nlp.tools.linop import LinearOperator
 
 class LPModel(QPModel):
     u"""Generic class to represent a linear programming (LP) problem.
@@ -37,8 +37,8 @@ class LPModel(QPModel):
         See the documentation of `NLPModel` for futher information.
         """
 
-        fromOps = kwargs.get('fromOps',None)
-        fromProb = kwargs.get('fromProb',None)
+        fromOps = kwargs.get('fromOps', None)
+        fromProb = kwargs.get('fromProb', None)
 
         if fromOps is not None:
             c = fromOps[0]
@@ -48,7 +48,12 @@ class LPModel(QPModel):
             n = c.shape[0]
 
             if A is None:
-                raise ValueError('Cannot have an unconstrained LP')
+                # Create an empty linear operator for consistency with H
+                m = 0
+                A = LinearOperator((0, n),
+                                       matvec=lambda x: np.empty((0, 0)),
+                                       rmatvec=lambda y: np.empty((n, 0)),
+                                       dtype=np.float)
             else:
                 if A.shape[1] != n:
                     raise ValueError('A has inconsistent shape')
@@ -79,7 +84,7 @@ class LPModel(QPModel):
 
         # Create a zero Hessian operator and use the QP model constructor
         # to do the rest of the initialization work.
-        H = LinearOperator(n, n,
+        H = LinearOperator((n, n),
                            lambda x: np.zeros(n),
                            symmetric=True,
                            dtype=np.float)

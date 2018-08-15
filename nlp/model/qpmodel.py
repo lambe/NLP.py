@@ -5,10 +5,9 @@ from builtins import range
 import logging
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import LinearOperator
 from nlp.model.kkt import KKTresidual
 from nlp.model.nlpmodel import NLPModel
-from nlp.tools.linop import ReducedLinearOperator
+from nlp.tools.linop import LinearOperator, ReducedLinearOperator
 
 
 class QPModel(NLPModel):
@@ -48,8 +47,8 @@ class QPModel(NLPModel):
         See the documentation of `NLPModel` for futher information.
         """
 
-        fromOps = kwargs.get('fromOps',None)
-        fromProb = kwargs.get('fromProb',None)
+        fromOps = kwargs.get('fromOps', None)
+        fromProb = kwargs.get('fromProb', None)
 
         if fromOps is not None:
             c = fromOps[0]
@@ -69,7 +68,7 @@ class QPModel(NLPModel):
                 elif sp.isspmatrix(H):
                     A = sp.coo_matrix((0, n))
                 elif isinstance(H, LinearOperator):
-                    A = LinearOperator((n, 0),
+                    A = LinearOperator((0, n),
                                        matvec=lambda x: np.empty((0, 0)),
                                        rmatvec=lambda y: np.empty((n, 0)),
                                        dtype=np.float)

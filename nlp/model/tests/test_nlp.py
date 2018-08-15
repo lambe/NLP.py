@@ -13,14 +13,13 @@ class Test_LPModel(TestCase):
         self.m = m = 3
         self.c = np.random.random(n)
         self.A = np.random.random((m, n))
-        self.lp1 = LPModel(self.c,
-                           A=self.A,
+        self.lp1 = LPModel(fromOps=(self.c, self.A),
                            Lvar=-np.random.random(n),
                            Uvar=np.random.random(n),
                            Lcon=-2 * np.random.random(n),
                            Ucon=2 * np.random.random(n))
 
-        self.lp2 = LPModel(self.c,
+        self.lp2 = LPModel(fromOps=(self.c, None),
                            Lvar=-np.random.random(n),
                            Uvar=np.random.random(n),
                            Lcon=-2 * np.random.random(n),
@@ -64,9 +63,9 @@ class Test_QPModel(TestCase):
         self.A = np.random.random((m, n))
         H = np.random.random((n, n))
         self.H = H + H.T
-        self.qp = QPModel(self.c,
-                          asLinearOperator(self.H),
-                          A=self.A,
+        self.qp = QPModel(fromOps=(self.c,
+                                   asLinearOperator(self.H),
+                                   self.A),
                           Lvar=-np.random.random(n),
                           Uvar=np.random.random(n),
                           Lcon=-2 * np.random.random(n),
