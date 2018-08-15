@@ -6,13 +6,12 @@ or their inverses.
 """
 
 import numpy as np
-# from scipy.sparse.linalg import LinearOperator
-from nlp.tools.linop import EnhancedLinearOperator
+from nlp.tools.linop import LinearOperator
 
 __docformat__ = 'restructuredtext'
 
 
-class LQNLinearOperator(EnhancedLinearOperator):
+class LQNLinearOperator(LinearOperator):
     """Store and manipulate Limited-memory Quasi-Newton approximations."""
 
     def __init__(self, n, npairs=5, **kwargs):

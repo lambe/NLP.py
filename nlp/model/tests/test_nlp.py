@@ -1,8 +1,9 @@
 """Tests relative to pure Python models."""
 
 from unittest import TestCase
-from nlp.model.nlpmodel import QPModel, LPModel
-from pykrylov.linop.linop import LinearOperator, linop_from_ndarray
+from nlp.model.lpmodel import LPModel
+from nlp.model.qpmodel import QPModel
+from nlp.tools.linop import LinearOperator, asLinearOperator
 import numpy as np
 
 
@@ -64,7 +65,7 @@ class Test_QPModel(TestCase):
         H = np.random.random((n, n))
         self.H = H + H.T
         self.qp = QPModel(self.c,
-                          linop_from_ndarray(self.H),
+                          asLinearOperator(self.H),
                           A=self.A,
                           Lvar=-np.random.random(n),
                           Uvar=np.random.random(n),

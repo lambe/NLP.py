@@ -1,7 +1,8 @@
 """Utilities for constructing specialized linear operators."""
 import logging
 import numpy as np
-from scipy.sparse.linalg import LinearOperator, aslinearoperator
+from scipy.sparse.linalg import LinearOperator as LinOp
+from scipy.sparse.linalg import aslinearoperator as asLinOp
 
 __docformat__ = 'restructuredtext'
 
@@ -23,14 +24,14 @@ class ShapeError(Exception):
         return repr(self.value)
 
 
-class EnhancedLinearOperator(LinearOperator):
+class LinearOperator(LinOp):
     """
     This is a wrapper class to the Scipy LinearOperator that adds a few
     useful capabilities for working in NLP.py. (Some of them may even
     get merged upstream at a later date.)
     """
     def __init__(self, shape, matvec, rmatvec=None, dtype=np.float, **kwargs):
-        super(EnhancedLinearOperator, self).__init__(dtype, shape)
+        super(LinearOperator, self).__init__(dtype, shape)
 
         self.__nargin = shape[1]
         self.__nargout = shape[0]
@@ -149,17 +150,21 @@ class EnhancedLinearOperator(LinearOperator):
         return y
 
 
-def asEnhancedLinearOperator(op):
+def asLinearOperator(op):
     """
-    Convert a scipy LinearOperator to a specialized EnhancedLinearOperator.
-    """
-    if not isinstance(op, LinearOperator):
-        op = aslinearoperator(op)
+    Convert a scipy LinearOperator to a specialized LinearOperator.
 
-    new_op = EnhancedLinearOperator(op.shape,
-                                    op.matvec,
-                                    rmatvec=op.rmatvec,
-                                    dtype=op.dtype)
+    If op is a compatible type (e.g., ndarray or scipy sparse matrix,) use
+    the scipy aslinearoperator() function to coerce it into a scipy
+    LinearOperator first.
+    """
+    if not isinstance(op, LinOp):
+        op = asLinOp(op)
+
+    new_op = LinearOperator(op.shape,
+                            op.matvec,
+                            rmatvec=op.rmatvec,
+                            dtype=op.dtype)
     return new_op
 
 
@@ -183,12 +188,12 @@ def ReducedLinearOperator(op, row_indices, col_indices):
         y = op.T * z
         return y[col_indices]
 
-    return EnhancedLinearOperator((nargout, nargin),
-                                  matvec,
-                                  rmatvec=rmatvec,
-                                  dtype=op.dtype,
-                                  symmetric=False,
-                                  hermitian=False)
+    return LinearOperator((nargout, nargin),
+                          matvec,
+                          rmatvec=rmatvec,
+                          dtype=op.dtype,
+                          symmetric=False,
+                          hermitian=False)
 
 
 def SymmetricallyReducedLinearOperator(op, indices):
@@ -210,9 +215,9 @@ def SymmetricallyReducedLinearOperator(op, indices):
         y = op.T * z
         return y[indices]
 
-    return EnhancedLinearOperator((nargin, nargin),
-                                  matvec,
-                                  rmatvec=rmatvec,
-                                  dtype=op.dtype,
-                                  symmetric=op.symmetric,
-                                  hermitian=op.hermitian)
+    return LinearOperator((nargin, nargin),
+                          matvec,
+                          rmatvec=rmatvec,
+                          dtype=op.dtype,
+                          symmetric=op.symmetric,
+                          hermitian=op.hermitian)

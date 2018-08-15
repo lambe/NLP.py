@@ -2,12 +2,12 @@ from copy import copy
 import numpy as np
 import itertools
 
-from nlp.tools.linop import EnhancedLinearOperator, null_log, ShapeError
+from nlp.tools.linop import LinearOperator, null_log, ShapeError
 
 __docformat__ = 'restructuredtext'
 
 
-class BlockLinearOperator(EnhancedLinearOperator):
+class BlockLinearOperator(LinearOperator):
     """
     A linear operator defined by blocks. Each block must be a linear operator.
 

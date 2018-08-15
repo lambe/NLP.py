@@ -11,10 +11,10 @@ import os
 import sys
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import LinearOperator
 
 from nlp.model.kkt import KKTresidual
 from nlp.tools.decorators import deprecated, counter
+from nlp.tools.linop import LinearOperator
 from nlp.tools.utils import where
 
 
