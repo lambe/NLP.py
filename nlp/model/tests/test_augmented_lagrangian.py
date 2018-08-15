@@ -3,7 +3,7 @@
 import os
 from unittest import TestCase
 from helper import *
-from python_models import Rosenbrock, SimpleQP
+from nlp.model.python_models import Rosenbrock, SimpleQP
 from nlp.model.augmented_lagrangian import AugmentedLagrangian
 from nlp.tools.dercheck import DerivativeChecker
 from nlp.tools.logs import config_logger

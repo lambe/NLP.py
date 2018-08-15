@@ -149,6 +149,18 @@ class LinearOperator(LinOp):
 
         return y
 
+    def _transpose(self):
+        """
+        Note: This function is NOT implemented in the base class. Only
+        the definition of self.transpose() and the property self.T are.
+        """
+        return LinearOperator((self.shape[1], self.shape[0]),
+                              self.__rmatvec_impl,
+                              rmatvec=self.__matvec_impl,
+                              dtype=self.dtype,
+                              symmetric=self.__symmetric,
+                              hermitian=self.__hermitian)
+
 
 def asLinearOperator(op):
     """
