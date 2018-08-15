@@ -125,7 +125,7 @@ class StrongWolfeLineSearch(object):
 
 if __name__ == '__main__':
 
-    from nlp.model.amplpy import AmplModel
+    from nlp.model.amplmodel import AmplModel
     from math import sqrt
     import sys
 
@@ -140,6 +140,7 @@ if __name__ == '__main__':
                                  lambda z: model.obj(z),
                                  lambda z: model.grad(z),
                                  stp=(1 / sqrt(np.dot(g, g)))
+                                )
     print(' Before search')
     print('   f = ', f)
     print('   stpmax = ', SWLS.stpmax)
