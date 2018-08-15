@@ -586,7 +586,7 @@ class NLPModel(object):
 
     def jop(self, x):
         """Obtain Jacobian at x as a linear operator."""
-        return LinearOperator((self.n, self.m),
+        return LinearOperator((self.m, self.n),
                               matvec=lambda v: self.jprod(x, v),
                               rmatvec=lambda u: self.jtprod(x, u),
                               dtype=np.float)
